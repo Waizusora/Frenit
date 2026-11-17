@@ -15,6 +15,64 @@ contracts must be specified and implemented before enabling a real init runtime.
 - Keep platform operations behind explicit interfaces.
 - Test policy and state transitions on a normal development host.
 
+## CLI convention
+
+All operational commands use the same structure:
+
+```text
+finit <domain> <action> [argument]
+finit help [domain]
+finit --version
+```
+
+Examples:
+
+```sh
+finit system status
+finit system health
+finit system diagnostic
+finit system shutdown
+finit system poweroff
+finit system reboot
+
+finit service start network
+finit service restart ssh
+finit service list
+finit process show 1234
+finit process signal 1234 TERM
+
+finit boot status
+finit target set multi-user
+finit mount mount /dev/root /root
+finit log service network
+finit watchdog status
+finit config validate
+
+finit dependency deps network
+finit dependency dependent network
+finit dependency graph
+finit dependency order
+finit command list
+```
+
+Domains:
+
+- `system`: status, version, info, health, diagnostic, recovery, shutdown,
+  reboot, poweroff, halt, and suspend.
+- `service`: service lifecycle and enablement.
+- `process`: process inspection and control.
+- `boot`: boot status and boot targets.
+- `target`: operating targets.
+- `mount`: filesystem mount management.
+- `log`: boot, service, and kernel logs.
+- `watchdog`: watchdog status.
+- `config`: configuration display, validation, testing, and reload.
+- `dependency`: service dependencies, dependents, graph, and execution order.
+- `command`: command/domain listing.
+
+The CLI validates command shape and reports unimplemented runtime operations
+explicitly; it never reports a privileged operation as successful.
+
 ## Build and test
 
 ```sh
@@ -23,27 +81,8 @@ cargo check --all-targets
 cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
 cargo run -- --help
-cargo run -- command
+cargo run -- command list
 ```
-
-## CLI outline
-
-```text
-finit status | version | info | help | command
-finit service start|stop|restart|reload|enable|disable|list|show|mask|unmask
-finit process list|show|kill|signal|terminate|tree
-finit boot status|log|list|target|default
-finit target list|get|set
-finit mount list|status|all|mount|umount|remount
-finit log [boot|service|kernel|clear]
-finit health | diagnostic | recovery | watchdog status
-finit config show|validate|reload|test
-finit deps <service> | dependent <service> | graph | order
-finit system shutdown|reboot|poweroff|halt|suspend
-```
-
-The initial CLI validates command shape and reports unimplemented runtime
-operations explicitly; it never reports a privileged operation as successful.
 
 ## Architecture
 
