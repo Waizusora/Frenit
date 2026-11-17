@@ -1,8 +1,17 @@
 use crate::{PROJECT_DESCRIPTION, PROJECT_NAME, VERSION};
 
 const DOMAINS: &[&str] = &[
-    "system", "service", "process", "boot", "target", "mount", "log", "watchdog",
-    "config", "dependency", "command",
+    "system",
+    "service",
+    "process",
+    "boot",
+    "target",
+    "mount",
+    "log",
+    "watchdog",
+    "config",
+    "dependency",
+    "command",
 ];
 
 const HELP: &str = r#"Frenit — Free Init
