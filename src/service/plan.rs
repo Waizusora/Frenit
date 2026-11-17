@@ -29,17 +29,17 @@ pub struct LifecyclePlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LifecyclePlanError {
     Dependency(DependencyError),
-    EnabledServiceDependsOnDisabled {
-        service: String,
-        dependency: String,
-    },
+    EnabledServiceDependsOnDisabled { service: String, dependency: String },
 }
 
 impl std::fmt::Display for LifecyclePlanError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Dependency(error) => write!(formatter, "{error}"),
-            Self::EnabledServiceDependsOnDisabled { service, dependency } => write!(
+            Self::EnabledServiceDependsOnDisabled {
+                service,
+                dependency,
+            } => write!(
                 formatter,
                 "enabled service '{service}' depends on disabled service '{dependency}'"
             ),
@@ -140,11 +140,17 @@ mod tests {
 
         let plan = LifecyclePlan::build(&[app, device]).unwrap();
         assert_eq!(
-            plan.startup.iter().map(|item| item.service.as_str()).collect::<Vec<_>>(),
+            plan.startup
+                .iter()
+                .map(|item| item.service.as_str())
+                .collect::<Vec<_>>(),
             vec!["device", "app"]
         );
         assert_eq!(
-            plan.shutdown.iter().map(|item| item.service.as_str()).collect::<Vec<_>>(),
+            plan.shutdown
+                .iter()
+                .map(|item| item.service.as_str())
+                .collect::<Vec<_>>(),
             vec!["app", "device"]
         );
         assert_eq!(plan.startup[0].timeout_ms, 1_000);
@@ -183,6 +189,9 @@ mod tests {
     fn all_disabled_definitions_produce_empty_plan() {
         let mut service = service("optional", &[]);
         service.enabled = false;
-        assert_eq!(LifecyclePlan::build(&[service]).unwrap(), LifecyclePlan::default());
+        assert_eq!(
+            LifecyclePlan::build(&[service]).unwrap(),
+            LifecyclePlan::default()
+        );
     }
 }
