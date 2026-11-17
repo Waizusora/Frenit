@@ -14,9 +14,16 @@ pub enum DependencyError {
 impl std::fmt::Display for DependencyError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidDefinition(error) => write!(formatter, "invalid service definition: {error}"),
-            Self::DuplicateService(name) => write!(formatter, "service '{name}' is defined more than once"),
-            Self::MissingDependency { service, dependency } => write!(
+            Self::InvalidDefinition(error) => {
+                write!(formatter, "invalid service definition: {error}")
+            }
+            Self::DuplicateService(name) => {
+                write!(formatter, "service '{name}' is defined more than once")
+            }
+            Self::MissingDependency {
+                service,
+                dependency,
+            } => write!(
                 formatter,
                 "service '{service}' depends on undefined service '{dependency}'"
             ),
@@ -39,9 +46,7 @@ impl std::error::Error for DependencyError {}
 pub struct DependencyResolver;
 
 impl DependencyResolver {
-    pub fn resolve(
-        definitions: &[ServiceDefinition],
-    ) -> Result<Vec<String>, DependencyError> {
+    pub fn resolve(definitions: &[ServiceDefinition]) -> Result<Vec<String>, DependencyError> {
         let mut by_name = BTreeMap::new();
 
         for definition in definitions {
@@ -52,9 +57,7 @@ impl DependencyResolver {
                 .insert(definition.name.as_str(), definition)
                 .is_some()
             {
-                return Err(DependencyError::DuplicateService(
-                    definition.name.clone(),
-                ));
+                return Err(DependencyError::DuplicateService(definition.name.clone()));
             }
         }
 
@@ -195,6 +198,9 @@ mod tests {
 
     #[test]
     fn empty_graph_resolves_to_empty_order() {
-        assert_eq!(DependencyResolver::resolve(&[]).unwrap(), Vec::<String>::new());
+        assert_eq!(
+            DependencyResolver::resolve(&[]).unwrap(),
+            Vec::<String>::new()
+        );
     }
 }
