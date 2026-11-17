@@ -1,16 +1,16 @@
 [package]
-name = "finit"
+name = "frenit"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Free Init - modular init and service management foundation for Wicofe OS"
 license = "MIT"
-repository = "https://github.com/Waizusora/Finit"
+repository = "https://github.com/Waizusora/Frenit"
 
 [lib]
-name = "finit"
+name = "frenit"
 path = "src/lib.rs"
 
 [[bin]]
-name = "finit"
+name = "frenit"
 path = "src/main.rs"
