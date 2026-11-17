@@ -210,12 +210,7 @@ mod tests {
     fn tracker_can_be_reset() {
         let mut tracker = RestartTracker::default();
         tracker
-            .schedule(
-                RestartPolicy::Always,
-                false,
-                1,
-                RestartLimit::default(),
-            )
+            .schedule(RestartPolicy::Always, false, 1, RestartLimit::default())
             .unwrap();
         tracker.reset();
         assert_eq!(tracker.scheduled_count(), 0);
