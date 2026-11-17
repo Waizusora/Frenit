@@ -1,0 +1,16 @@
+[package]
+name = "finit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Free Init - modular init and service management foundation for Wicofe OS"
+license = "MIT"
+repository = "https://github.com/Waizusora/Finit"
+
+[lib]
+name = "finit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "finit"
+path = "src/main.rs"
