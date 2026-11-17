@@ -46,6 +46,22 @@ impl std::error::Error for DependencyError {}
 pub struct DependencyResolver;
 
 impl DependencyResolver {
+    /// Returns services in startup order: dependencies before dependents.
+    pub fn resolve_startup_order(
+        definitions: &[ServiceDefinition],
+    ) -> Result<Vec<String>, DependencyError> {
+        Self::resolve(definitions)
+    }
+
+    /// Returns the exact reverse of startup order for dependency-safe shutdown.
+    pub fn resolve_shutdown_order(
+        definitions: &[ServiceDefinition],
+    ) -> Result<Vec<String>, DependencyError> {
+        let mut order = Self::resolve(definitions)?;
+        order.reverse();
+        Ok(order)
+    }
+
     pub fn resolve(definitions: &[ServiceDefinition]) -> Result<Vec<String>, DependencyError> {
         let mut by_name = BTreeMap::new();
 
@@ -137,6 +153,24 @@ mod tests {
         assert_eq!(
             DependencyResolver::resolve(&definitions).unwrap(),
             vec!["device", "logger", "network", "app"]
+        );
+    }
+
+    #[test]
+    fn shutdown_order_is_reverse_of_startup_order() {
+        let definitions = vec![
+            service("app", &["network"]),
+            service("network", &["device"]),
+            service("device", &[]),
+        ];
+
+        assert_eq!(
+            DependencyResolver::resolve_startup_order(&definitions).unwrap(),
+            vec!["device", "network", "app"]
+        );
+        assert_eq!(
+            DependencyResolver::resolve_shutdown_order(&definitions).unwrap(),
+            vec!["app", "network", "device"]
         );
     }
 
