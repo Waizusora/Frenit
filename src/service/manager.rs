@@ -198,7 +198,9 @@ mod tests {
     #[test]
     fn duplicate_names_are_rejected_without_replacing_records() {
         let mut registry = ServiceRegistry::default();
-        registry.register(ServiceRecord::new("logd").unwrap()).unwrap();
+        registry
+            .register(ServiceRecord::new("logd").unwrap())
+            .unwrap();
 
         assert_eq!(
             registry.register(ServiceRecord::new("logd").unwrap()),
