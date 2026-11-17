@@ -111,7 +111,9 @@ impl fmt::Display for ServiceRegistryError {
             Self::InvalidTransition { from, to } => {
                 write!(formatter, "invalid service transition: {from:?} -> {to:?}")
             }
-            Self::PidRequired(state) => write!(formatter, "a non-zero PID is required for {state:?}"),
+            Self::PidRequired(state) => {
+                write!(formatter, "a non-zero PID is required for {state:?}")
+            }
             Self::PidNotAllowed(state) => write!(formatter, "a PID is not allowed for {state:?}"),
             Self::InvalidPid(pid) => write!(formatter, "invalid process ID {pid}"),
         }
@@ -126,10 +128,7 @@ pub struct ServiceRegistry {
 }
 
 impl ServiceRegistry {
-    pub fn register(
-        &mut self,
-        record: ServiceRecord,
-    ) -> Result<(), ServiceRegistryError> {
+    pub fn register(&mut self, record: ServiceRecord) -> Result<(), ServiceRegistryError> {
         validate_name(&record.name)?;
         if self.services.contains_key(&record.name) {
             return Err(ServiceRegistryError::AlreadyExists(record.name));
@@ -188,7 +187,9 @@ mod tests {
     #[test]
     fn registry_tracks_services_by_name() {
         let mut registry = ServiceRegistry::default();
-        registry.register(ServiceRecord::new("logd").unwrap()).unwrap();
+        registry
+            .register(ServiceRecord::new("logd").unwrap())
+            .unwrap();
 
         assert_eq!(registry.get("logd").unwrap().state, ServiceState::Inactive);
         assert_eq!(registry.len(), 1);
