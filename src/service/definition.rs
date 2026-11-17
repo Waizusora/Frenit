@@ -194,9 +194,7 @@ mod tests {
         definition.environment.insert("9BAD".into(), "value".into());
         assert_eq!(
             definition.validate(),
-            Err(ServiceDefinitionError::InvalidEnvironmentKey(
-                "9BAD".into()
-            ))
+            Err(ServiceDefinitionError::InvalidEnvironmentKey("9BAD".into()))
         );
     }
 
