@@ -1,25 +1,16 @@
 use crate::{PROJECT_DESCRIPTION, PROJECT_NAME, VERSION};
 
 const DOMAINS: &[&str] = &[
-    "system",
-    "service",
-    "process",
-    "boot",
-    "target",
-    "mount",
-    "log",
-    "watchdog",
-    "config",
-    "dependency",
-    "command",
+    "system", "service", "process", "boot", "target", "mount", "log", "watchdog",
+    "config", "dependency", "command",
 ];
 
-const HELP: &str = r#"Finit — Free Init
+const HELP: &str = r#"Frenit — Free Init
 
 Usage:
-  finit <domain> <action> [argument]
-  finit help [domain]
-  finit --version
+  frenit <domain> <action> [argument]
+  frenit help [domain]
+  frenit --version
 
 Domains:
   system       System status, diagnostics, and power management
@@ -35,11 +26,11 @@ Domains:
   command      Command vocabulary
 
 Examples:
-  finit system status
-  finit service start network
-  finit process show 1234
-  finit dependency graph
-  finit system poweroff
+  frenit system status
+  frenit service start network
+  frenit process show 1234
+  frenit dependency graph
+  frenit system poweroff
 
 Runtime operations are not yet connected to the Wicofe kernel or service manager.
 "#;
@@ -54,9 +45,15 @@ where
         return Ok(HELP.to_owned());
     }
     if args[0] == "help" {
+        if args.len() > 2 {
+            return Err("usage: frenit help [domain]".to_owned());
+        }
         return help_for(args.get(1).map(String::as_str));
     }
     if args[0] == "--version" || args[0] == "-V" {
+        if args.len() != 1 {
+            return Err("usage: frenit --version".to_owned());
+        }
         return Ok(format!("{PROJECT_NAME} ({PROJECT_DESCRIPTION}) {VERSION}"));
     }
     if args.as_slice() == ["system", "version"] {
@@ -87,7 +84,7 @@ fn help_for(domain: Option<&str>) -> Result<String, String> {
         Some("config") => Ok("config actions: show, validate, reload, test".to_owned()),
         Some("dependency") => Ok("dependency actions: deps, dependent, graph, order".to_owned()),
         Some("command") => Ok("command actions: list".to_owned()),
-        Some(other) => Err(format!("unknown domain '{other}'. Run 'finit help'.")),
+        Some(other) => Err(format!("unknown domain '{other}'. Run 'frenit help'.")),
     }
 }
 
@@ -96,15 +93,21 @@ fn validate_command(args: &[String]) -> Result<(), String> {
     let action = args.get(1).map(String::as_str).unwrap_or_default();
 
     if !DOMAINS.contains(&domain) {
-        return Err(format!("unknown domain '{domain}'. Run 'finit help'."));
+        return Err(format!("unknown domain '{domain}'. Run 'frenit help'."));
     }
 
     let valid = match (domain, action) {
-        ("system", "status" | "version" | "info" | "health" | "diagnostic" | "recovery"
-            | "shutdown" | "reboot" | "poweroff" | "halt" | "suspend") => args.len() == 2,
+        (
+            "system",
+            "status" | "version" | "info" | "health" | "diagnostic" | "recovery" | "shutdown"
+            | "reboot" | "poweroff" | "halt" | "suspend",
+        ) => args.len() == 2,
         ("service", "list") => args.len() == 2,
-        ("service", "start" | "stop" | "restart" | "reload" | "enable" | "disable"
-            | "show" | "mask" | "unmask") => args.len() == 3,
+        (
+            "service",
+            "start" | "stop" | "restart" | "reload" | "enable" | "disable" | "show" | "mask"
+            | "unmask",
+        ) => args.len() == 3,
         ("process", "list" | "tree") => args.len() == 2,
         ("process", "show" | "kill" | "terminate") => args.len() == 3,
         ("process", "signal") => args.len() == 4,
@@ -126,7 +129,7 @@ fn validate_command(args: &[String]) -> Result<(), String> {
 
     if !valid {
         return Err(format!(
-            "invalid action or arguments for '{domain}'. Run 'finit help {domain}'."
+            "invalid action or arguments for '{domain}'. Run 'frenit help {domain}'."
         ));
     }
     Ok(())
@@ -146,7 +149,15 @@ mod tests {
 
     #[test]
     fn help_is_available_without_arguments() {
-        assert!(run_args(&[]).unwrap().contains("Finit"));
+        assert!(run_args(&[]).unwrap().contains("Frenit"));
+        assert!(run_args(&["--help"]).unwrap().contains("frenit <domain>"));
+    }
+
+    #[test]
+    fn version_is_available_from_root_and_system_domain() {
+        assert!(run_args(&["--version"]).unwrap().contains("Frenit"));
+        assert!(run_args(&["system", "version"]).unwrap().contains("Frenit"));
+        assert!(run_args(&["--version", "extra"]).is_err());
     }
 
     #[test]
@@ -168,17 +179,21 @@ mod tests {
         assert!(validate(&["service", "start", "sshd"]).is_ok());
         assert!(validate(&["service", "start"]).is_err());
         assert!(validate(&["service", "explode"]).is_err());
+        assert!(validate(&["service", "list", "extra"]).is_err());
     }
 
     #[test]
-    fn validates_process_signal_shape() {
+    fn validates_process_action_shapes() {
         assert!(validate(&["process", "signal", "1234", "TERM"]).is_ok());
         assert!(validate(&["process", "signal", "1234"]).is_err());
+        assert!(validate(&["process", "show", "1234"]).is_ok());
+        assert!(validate(&["process", "tree", "extra"]).is_err());
     }
 
     #[test]
     fn dependency_actions_require_a_service_when_needed() {
         assert!(validate(&["dependency", "deps", "network"]).is_ok());
+        assert!(validate(&["dependency", "dependent", "network"]).is_ok());
         assert!(validate(&["dependency", "dependent"]).is_err());
         assert!(validate(&["dependency", "graph"]).is_ok());
     }
@@ -188,10 +203,13 @@ mod tests {
         assert!(validate(&["system", "shutdown"]).is_ok());
         assert!(validate(&["system", "poweroff"]).is_ok());
         assert!(validate(&["system", "reboot"]).is_ok());
+        assert!(validate(&["system", "shutdown", "now"]).is_err());
     }
 
     #[test]
-    fn domain_help_is_available() {
+    fn domain_help_is_available_and_rejects_extra_arguments() {
         assert!(run_args(&["help", "service"]).unwrap().contains("restart"));
+        assert!(run_args(&["help", "service", "extra"]).is_err());
+        assert!(run_args(&["help", "unknown"]).is_err());
     }
 }
