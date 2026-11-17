@@ -7,6 +7,6 @@ pub mod diagnostic;
 pub mod service;
 pub mod shutdown;
 
-pub const PROJECT_NAME: &str = "Finit";
+pub const PROJECT_NAME: &str = "Frenit";
 pub const PROJECT_DESCRIPTION: &str = "Free Init";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
