@@ -169,7 +169,9 @@ mod tests {
     fn startup_action_carries_process_configuration() {
         let mut definition = service("worker", &[]);
         definition.arguments = vec!["--foreground".into(), "--level=info".into()];
-        definition.environment.insert("MODE".into(), "production".into());
+        definition
+            .environment
+            .insert("MODE".into(), "production".into());
         definition.working_directory = Some("/var/lib/worker".into());
 
         let plan = LifecyclePlan::build(&[definition]).unwrap();
@@ -177,7 +179,10 @@ mod tests {
 
         assert_eq!(action.executable, "/sbin/worker");
         assert_eq!(action.arguments, vec!["--foreground", "--level=info"]);
-        assert_eq!(action.environment.get("MODE").map(String::as_str), Some("production"));
+        assert_eq!(
+            action.environment.get("MODE").map(String::as_str),
+            Some("production")
+        );
         assert_eq!(action.working_directory.as_deref(), Some("/var/lib/worker"));
     }
 
