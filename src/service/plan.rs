@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use super::definition::ServiceDefinition;
 use super::dependency::{DependencyError, DependencyResolver};
 use super::restart::RestartPolicy;
@@ -7,6 +9,9 @@ use super::restart::RestartPolicy;
 pub struct StartAction {
     pub service: String,
     pub executable: String,
+    pub arguments: Vec<String>,
+    pub environment: BTreeMap<String, String>,
+    pub working_directory: Option<String>,
     pub timeout_ms: u64,
     pub restart_policy: RestartPolicy,
 }
@@ -95,6 +100,9 @@ impl LifecyclePlan {
                 StartAction {
                     service: name,
                     executable: definition.executable.clone(),
+                    arguments: definition.arguments.clone(),
+                    environment: definition.environment.clone(),
+                    working_directory: definition.working_directory.clone(),
                     timeout_ms: definition.start_timeout_ms,
                     restart_policy: definition.restart_policy,
                 }
@@ -155,6 +163,22 @@ mod tests {
         );
         assert_eq!(plan.startup[0].timeout_ms, 1_000);
         assert_eq!(plan.shutdown[0].timeout_ms, 750);
+    }
+
+    #[test]
+    fn startup_action_carries_process_configuration() {
+        let mut definition = service("worker", &[]);
+        definition.arguments = vec!["--foreground".into(), "--level=info".into()];
+        definition.environment.insert("MODE".into(), "production".into());
+        definition.working_directory = Some("/var/lib/worker".into());
+
+        let plan = LifecyclePlan::build(&[definition]).unwrap();
+        let action = &plan.startup[0];
+
+        assert_eq!(action.executable, "/sbin/worker");
+        assert_eq!(action.arguments, vec!["--foreground", "--level=info"]);
+        assert_eq!(action.environment.get("MODE").map(String::as_str), Some("production"));
+        assert_eq!(action.working_directory.as_deref(), Some("/var/lib/worker"));
     }
 
     #[test]
