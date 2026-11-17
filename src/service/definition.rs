@@ -67,8 +67,7 @@ impl ServiceDefinition {
 
         let mut dependencies = BTreeSet::new();
         for dependency in &self.dependencies {
-            validate_identifier(dependency)
-                .map_err(ServiceDefinitionError::InvalidDependency)?;
+            validate_identifier(dependency).map_err(ServiceDefinitionError::InvalidDependency)?;
             if dependency == &self.name {
                 return Err(ServiceDefinitionError::SelfDependency(self.name.clone()));
             }
@@ -79,7 +78,11 @@ impl ServiceDefinition {
             }
         }
 
-        if self.arguments.iter().any(|argument| argument.contains('\0')) {
+        if self
+            .arguments
+            .iter()
+            .any(|argument| argument.contains('\0'))
+        {
             return Err(ServiceDefinitionError::InvalidArgument);
         }
 
@@ -105,15 +108,32 @@ impl fmt::Display for ServiceDefinitionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidName(name) => write!(formatter, "invalid service name '{name}'"),
-            Self::InvalidExecutable => write!(formatter, "service executable must be non-empty and contain no NUL bytes"),
-            Self::InvalidWorkingDirectory => write!(formatter, "working directory must be non-empty and contain no NUL bytes"),
-            Self::InvalidEnvironmentKey(key) => write!(formatter, "invalid environment variable name '{key}'"),
-            Self::InvalidEnvironmentValue(key) => write!(formatter, "environment variable '{key}' contains a NUL byte"),
+            Self::InvalidExecutable => write!(
+                formatter,
+                "service executable must be non-empty and contain no NUL bytes"
+            ),
+            Self::InvalidWorkingDirectory => write!(
+                formatter,
+                "working directory must be non-empty and contain no NUL bytes"
+            ),
+            Self::InvalidEnvironmentKey(key) => {
+                write!(formatter, "invalid environment variable name '{key}'")
+            }
+            Self::InvalidEnvironmentValue(key) => write!(
+                formatter,
+                "environment variable '{key}' contains a NUL byte"
+            ),
             Self::InvalidArgument => write!(formatter, "service argument contains a NUL byte"),
             Self::InvalidDependency(name) => write!(formatter, "invalid dependency name '{name}'"),
-            Self::SelfDependency(name) => write!(formatter, "service '{name}' cannot depend on itself"),
-            Self::DuplicateDependency(name) => write!(formatter, "dependency '{name}' is listed more than once"),
-            Self::InvalidTimeout(kind) => write!(formatter, "{kind} timeout must be greater than zero"),
+            Self::SelfDependency(name) => {
+                write!(formatter, "service '{name}' cannot depend on itself")
+            }
+            Self::DuplicateDependency(name) => {
+                write!(formatter, "dependency '{name}' is listed more than once")
+            }
+            Self::InvalidTimeout(kind) => {
+                write!(formatter, "{kind} timeout must be greater than zero")
+            }
         }
     }
 }
@@ -166,13 +186,17 @@ mod tests {
     #[test]
     fn validates_environment_names_and_values() {
         let mut definition = ServiceDefinition::new("logd", "/sbin/logd");
-        definition.environment.insert("GOOD_KEY".into(), "value".into());
+        definition
+            .environment
+            .insert("GOOD_KEY".into(), "value".into());
         assert!(definition.validate().is_ok());
 
         definition.environment.insert("9BAD".into(), "value".into());
         assert_eq!(
             definition.validate(),
-            Err(ServiceDefinitionError::InvalidEnvironmentKey("9BAD".into()))
+            Err(ServiceDefinitionError::InvalidEnvironmentKey(
+                "9BAD".into()
+            ))
         );
     }
 
@@ -188,7 +212,9 @@ mod tests {
         definition.dependencies = vec!["network".into(), "network".into()];
         assert_eq!(
             definition.validate(),
-            Err(ServiceDefinitionError::DuplicateDependency("network".into()))
+            Err(ServiceDefinitionError::DuplicateDependency(
+                "network".into()
+            ))
         );
     }
 
