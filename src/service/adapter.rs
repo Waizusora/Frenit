@@ -30,11 +30,7 @@ pub trait RuntimeAdapter {
     ///
     /// A successful return means only that the stop request was accepted;
     /// completion must be reported later through a runtime event.
-    fn request_stop(
-        &mut self,
-        action: &StopAction,
-        pid: u32,
-    ) -> Result<(), RuntimeFailure>;
+    fn request_stop(&mut self, action: &StopAction, pid: u32) -> Result<(), RuntimeFailure>;
 
     /// Retrieves the next available asynchronous runtime event.
     fn poll_event(&mut self) -> Result<Option<RuntimeEvent>, RuntimeFailure>;
@@ -58,11 +54,7 @@ mod tests {
             Ok(41)
         }
 
-        fn request_stop(
-            &mut self,
-            action: &StopAction,
-            pid: u32,
-        ) -> Result<(), RuntimeFailure> {
+        fn request_stop(&mut self, action: &StopAction, pid: u32) -> Result<(), RuntimeFailure> {
             self.stop_requests.push((action.service.clone(), pid));
             Ok(())
         }
