@@ -130,11 +130,9 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
                 let pid = registry
                     .get(&service)
                     .and_then(|record| record.pid)
-                    .ok_or_else(|| {
-                        RuntimeExecutorError::Coordinator(
-                            LifecycleCoordinatorError::NoActionInFlight,
-                        )
-                    })?;
+                    .ok_or(RuntimeExecutorError::Coordinator(
+                        LifecycleCoordinatorError::NoActionInFlight,
+                    ))?;
                 match self.adapter.request_stop(&action, pid) {
                     Ok(()) => Ok(Some(RuntimeExecutionOutcome::StopRequested {
                         service,
