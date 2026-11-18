@@ -345,9 +345,13 @@ mod tests {
         let mut registry = registry_with_services();
 
         coordinator.next_action(&mut registry).unwrap();
-        coordinator.complete_start(&mut registry, "device", Some(10)).unwrap();
+        coordinator
+            .complete_start(&mut registry, "device", Some(10))
+            .unwrap();
         coordinator.next_action(&mut registry).unwrap();
-        coordinator.complete_start(&mut registry, "network", None).unwrap();
+        coordinator
+            .complete_start(&mut registry, "network", None)
+            .unwrap();
 
         assert_eq!(coordinator.phase(), LifecyclePhase::Failed);
         assert_eq!(registry.get("device").unwrap().state, ServiceState::Running);
@@ -357,11 +361,16 @@ mod tests {
         coordinator.begin_shutdown(&mut registry).unwrap();
         let action = coordinator.next_action(&mut registry).unwrap().unwrap();
         assert!(matches!(action, LifecycleAction::Stop(ref item) if item.service == "device"));
-        coordinator.complete_stop(&mut registry, "device", true).unwrap();
+        coordinator
+            .complete_stop(&mut registry, "device", true)
+            .unwrap();
 
         assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
         assert_eq!(coordinator.phase(), LifecyclePhase::Complete);
-        assert_eq!(registry.get("device").unwrap().state, ServiceState::Inactive);
+        assert_eq!(
+            registry.get("device").unwrap().state,
+            ServiceState::Inactive
+        );
         assert_eq!(registry.get("network").unwrap().state, ServiceState::Failed);
     }
 
@@ -377,14 +386,18 @@ mod tests {
 
         for (name, pid) in [("device", 10), ("network", 11)] {
             coordinator.next_action(&mut registry).unwrap();
-            coordinator.complete_start(&mut registry, name, Some(pid)).unwrap();
+            coordinator
+                .complete_start(&mut registry, name, Some(pid))
+                .unwrap();
         }
         assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
         coordinator.begin_shutdown(&mut registry).unwrap();
 
         let action = coordinator.next_action(&mut registry).unwrap().unwrap();
         assert!(matches!(action, LifecycleAction::Stop(ref item) if item.service == "network"));
-        coordinator.complete_stop(&mut registry, "network", false).unwrap();
+        coordinator
+            .complete_stop(&mut registry, "network", false)
+            .unwrap();
         assert_eq!(registry.get("network").unwrap().state, ServiceState::Failed);
 
         let action = coordinator.next_action(&mut registry).unwrap().unwrap();
