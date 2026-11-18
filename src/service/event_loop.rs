@@ -124,6 +124,10 @@ mod tests {
         registry
             .register(ServiceRecord::new("worker").unwrap())
             .unwrap();
+        coordinator.next_action(&mut registry).unwrap();
+        coordinator
+            .complete_start(&mut registry, "worker", Some(1))
+            .unwrap();
         let mut adapter = FakeAdapter {
             events: VecDeque::new(),
             next_pid: 0,
