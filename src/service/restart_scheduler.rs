@@ -58,11 +58,14 @@ impl RestartScheduler {
 
     /// Removes and returns every restart whose deadline is at or before now.
     pub fn take_due(&mut self, now_seconds: u64) -> Vec<ScheduledRestart> {
-        let due_names: Vec<_> = self.pending.iter()
+        let mut due_names: Vec<_> = self.pending.iter()
             .filter(|(_, item)| item.due_at_seconds <= now_seconds)
-            .map(|(name, _)| name.clone())
+            .map(|(name, item)| (item.due_at_seconds, name.clone()))
             .collect();
-        due_names.into_iter().filter_map(|name| self.pending.remove(&name)).collect()
+        due_names.sort();
+        due_names.into_iter()
+            .filter_map(|(_, name)| self.pending.remove(&name))
+            .collect()
     }
 
     pub fn cancel(&mut self, service: &str) -> bool {
