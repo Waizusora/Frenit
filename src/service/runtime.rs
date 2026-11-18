@@ -143,7 +143,6 @@ impl RuntimeEvent {
         }
     }
 }
-
 /// Result of applying one validated runtime event to Frenit's state model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeDispatchOutcome {
@@ -311,10 +310,12 @@ mod tests {
         use crate::service::manager::ServiceRecord;
         use crate::service::plan::LifecyclePlan;
 
-        let plan = LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")])
-            .unwrap();
+        let plan =
+            LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
         let mut registry = ServiceRegistry::default();
-        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
+        registry
+            .register(ServiceRecord::new("worker").unwrap())
+            .unwrap();
         (LifecycleCoordinator::new(plan), registry)
     }
 
@@ -397,7 +398,10 @@ mod tests {
                 delay_seconds: 2
             })
         );
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Starting);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Starting
+        );
     }
 
     #[test]
