@@ -165,8 +165,12 @@ mod tests {
         .unwrap();
         let mut coordinator = LifecycleCoordinator::new(plan);
         let mut registry = ServiceRegistry::default();
-        registry.register(ServiceRecord::new("alpha").unwrap()).unwrap();
-        registry.register(ServiceRecord::new("beta").unwrap()).unwrap();
+        registry
+            .register(ServiceRecord::new("alpha").unwrap())
+            .unwrap();
+        registry
+            .register(ServiceRecord::new("beta").unwrap())
+            .unwrap();
         let mut executor = RuntimeExecutor::new(FakeAdapter {
             events: VecDeque::new(),
             next_pid: 100,
@@ -203,9 +207,12 @@ mod tests {
             Some(RuntimeExecutionOutcome::StopRequested { service, .. }) if service == "beta"
         ));
 
-        executor.adapter_mut().events.push_back(RuntimeEvent::StopSucceeded {
-            service: "beta".into(),
-        });
+        executor
+            .adapter_mut()
+            .events
+            .push_back(RuntimeEvent::StopSucceeded {
+                service: "beta".into(),
+            });
 
         // The queued completion is consumed before requesting alpha's stop.
         let second = RuntimeEventLoop::step(
@@ -227,5 +234,4 @@ mod tests {
         assert_eq!(registry.get("beta").unwrap().state, ServiceState::Inactive);
         assert_eq!(registry.get("alpha").unwrap().state, ServiceState::Stopping);
     }
-
 }
