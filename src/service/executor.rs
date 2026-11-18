@@ -5,9 +5,7 @@
 //! or sleeping; those remain the adapter's responsibility.
 
 use super::adapter::RuntimeAdapter;
-use super::coordinator::{
-    LifecycleAction, LifecycleCoordinator, LifecycleCoordinatorError,
-};
+use super::coordinator::{LifecycleAction, LifecycleCoordinator, LifecycleCoordinatorError};
 use super::manager::ServiceRegistry;
 use super::restart::{RestartLimit, RestartPolicy};
 use super::runtime::{
@@ -16,10 +14,22 @@ use super::runtime::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeExecutionOutcome {
-    Started { service: String, pid: u32 },
-    StartFailed { service: String, failure: RuntimeFailure },
-    StopRequested { service: String, pid: u32 },
-    StopRequestFailed { service: String, failure: RuntimeFailure },
+    Started {
+        service: String,
+        pid: u32,
+    },
+    StartFailed {
+        service: String,
+        failure: RuntimeFailure,
+    },
+    StopRequested {
+        service: String,
+        pid: u32,
+    },
+    StopRequestFailed {
+        service: String,
+        failure: RuntimeFailure,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +44,9 @@ impl std::fmt::Display for RuntimeExecutorError {
         match self {
             Self::Coordinator(error) => write!(formatter, "{error}"),
             Self::Dispatch(error) => write!(formatter, "{error}"),
-            Self::AdapterPoll(error) => write!(formatter, "runtime event polling failed: {error:?}"),
+            Self::AdapterPoll(error) => {
+                write!(formatter, "runtime event polling failed: {error:?}")
+            }
         }
     }
 }
@@ -99,11 +111,17 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
                             "runtime adapter returned PID 0 after start",
                         );
                         coordinator.complete_start(registry, &service, None)?;
-                        Ok(Some(RuntimeExecutionOutcome::StartFailed { service, failure }))
+                        Ok(Some(RuntimeExecutionOutcome::StartFailed {
+                            service,
+                            failure,
+                        }))
                     }
                     Err(failure) => {
                         coordinator.complete_start(registry, &service, None)?;
-                        Ok(Some(RuntimeExecutionOutcome::StartFailed { service, failure }))
+                        Ok(Some(RuntimeExecutionOutcome::StartFailed {
+                            service,
+                            failure,
+                        }))
                     }
                 }
             }
@@ -118,7 +136,10 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
                         )
                     })?;
                 match self.adapter.request_stop(&action, pid) {
-                    Ok(()) => Ok(Some(RuntimeExecutionOutcome::StopRequested { service, pid })),
+                    Ok(()) => Ok(Some(RuntimeExecutionOutcome::StopRequested {
+                        service,
+                        pid,
+                    })),
                     Err(failure) => {
                         coordinator.complete_stop(registry, &service, false)?;
                         Ok(Some(RuntimeExecutionOutcome::StopRequestFailed {
@@ -147,14 +168,8 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
             return Ok(None);
         };
 
-        dispatch_runtime_event(
-            coordinator,
-            registry,
-            event,
-            restart_policy,
-            restart_limit,
-        )
-        .map(Some)
-        .map_err(Into::into)
+        dispatch_runtime_event(coordinator, registry, event, restart_policy, restart_limit)
+            .map(Some)
+            .map_err(Into::into)
     }
 }
