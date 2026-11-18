@@ -6,8 +6,9 @@
 
 use super::adapter::RuntimeAdapter;
 use super::coordinator::{LifecycleAction, LifecycleCoordinator, LifecycleCoordinatorError};
-use super::manager::ServiceRegistry;
+use super::manager::{ServiceRegistry, ServiceRegistryError, ServiceState};
 use super::restart::{RestartLimit, RestartPolicy};
+use super::restart_scheduler::{RestartScheduler, RestartSchedulerError};
 use super::runtime::{
     dispatch_runtime_event, RuntimeDispatchError, RuntimeDispatchOutcome, RuntimeFailure,
 };
@@ -30,6 +31,8 @@ pub enum RuntimeExecutionOutcome {
         service: String,
         failure: RuntimeFailure,
     },
+    RestartStarted { service: String, pid: u32 },
+    RestartStartFailed { service: String, failure: RuntimeFailure },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +40,9 @@ pub enum RuntimeExecutorError {
     Coordinator(LifecycleCoordinatorError),
     Dispatch(RuntimeDispatchError),
     AdapterPoll(RuntimeFailure),
+    Registry(ServiceRegistryError),
+    Scheduler(RestartSchedulerError),
+    MissingStartAction(String),
 }
 
 impl std::fmt::Display for RuntimeExecutorError {
@@ -47,6 +53,9 @@ impl std::fmt::Display for RuntimeExecutorError {
             Self::AdapterPoll(error) => {
                 write!(formatter, "runtime event polling failed: {error:?}")
             }
+            Self::Registry(error) => write!(formatter, "{error}"),
+            Self::Scheduler(error) => write!(formatter, "{error}"),
+            Self::MissingStartAction(service) => write!(formatter, "service '{service}' has no startup action in the lifecycle plan"),
         }
     }
 }
@@ -68,11 +77,12 @@ impl From<RuntimeDispatchError> for RuntimeExecutorError {
 /// Executes one coordinator action and dispatches asynchronous runtime events.
 pub struct RuntimeExecutor<A> {
     adapter: A,
+    restart_scheduler: RestartScheduler,
 }
 
 impl<A: RuntimeAdapter> RuntimeExecutor<A> {
     pub const fn new(adapter: A) -> Self {
-        Self { adapter }
+        Self { adapter, restart_scheduler: RestartScheduler::default() }
     }
 
     pub fn adapter(&self) -> &A {
@@ -81,6 +91,10 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
 
     pub fn adapter_mut(&mut self) -> &mut A {
         &mut self.adapter
+    }
+
+    pub fn restart_scheduler(&self) -> &RestartScheduler {
+        &self.restart_scheduler
     }
 
     /// Obtains and executes at most one lifecycle action.
@@ -155,16 +169,67 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
         restart_policy: RestartPolicy,
         restart_limit: RestartLimit,
     ) -> Result<Option<RuntimeDispatchOutcome>, RuntimeExecutorError> {
-        let Some(event) = self
-            .adapter
-            .poll_event()
-            .map_err(RuntimeExecutorError::AdapterPoll)?
-        else {
+        let Some(event) = self.adapter.poll_event().map_err(RuntimeExecutorError::AdapterPoll)? else {
             return Ok(None);
         };
 
-        dispatch_runtime_event(coordinator, registry, event, restart_policy, restart_limit)
-            .map(Some)
-            .map_err(Into::into)
+        let restart_observation = match &event {
+            super::runtime::RuntimeEvent::ProcessExited { service, observed_at_seconds, .. } =>
+                Some((service.clone(), *observed_at_seconds)),
+            _ => None,
+        };
+        let outcome = dispatch_runtime_event(
+            coordinator, registry, event, restart_policy, restart_limit,
+        )?;
+
+        if let (
+            Some((service, now_seconds)),
+            RuntimeDispatchOutcome::ProcessExit(
+                super::supervisor::ExitDecision::RestartScheduled { delay_seconds },
+            ),
+        ) = (restart_observation, &outcome)
+        {
+            let action = coordinator.start_action_for(&service)
+                .ok_or_else(|| RuntimeExecutorError::MissingStartAction(service.clone()))?;
+            self.restart_scheduler.schedule(action, now_seconds, *delay_seconds)
+                .map_err(RuntimeExecutorError::Scheduler)?;
+        }
+
+        Ok(Some(outcome))
+    }
+
+    /// Executes all restart deadlines that have expired at the supplied
+    /// monotonic timestamp. No sleeping or clock access occurs here.
+    pub fn execute_due_restarts(
+        &mut self,
+        now_seconds: u64,
+        registry: &mut ServiceRegistry,
+    ) -> Result<Vec<RuntimeExecutionOutcome>, RuntimeExecutorError> {
+        let due = self.restart_scheduler.take_due(now_seconds);
+        let mut outcomes = Vec::with_capacity(due.len());
+
+        for scheduled in due {
+            let service = scheduled.action.service.clone();
+            match self.adapter.start(&scheduled.action) {
+                Ok(pid) if pid > 0 => {
+                    registry.transition(&service, ServiceState::Running, Some(pid))?;
+                    outcomes.push(RuntimeExecutionOutcome::RestartStarted { service, pid });
+                }
+                Ok(_) => {
+                    let failure = RuntimeFailure::new(
+                        super::runtime::RuntimeFailureKind::ProtocolError,
+                        "runtime adapter returned PID 0 after restart",
+                    );
+                    registry.transition(&service, ServiceState::Failed, None)?;
+                    outcomes.push(RuntimeExecutionOutcome::RestartStartFailed { service, failure });
+                }
+                Err(failure) => {
+                    registry.transition(&service, ServiceState::Failed, None)?;
+                    outcomes.push(RuntimeExecutionOutcome::RestartStartFailed { service, failure });
+                }
+            }
+        }
+
+        Ok(outcomes)
     }
 }
