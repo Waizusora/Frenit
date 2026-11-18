@@ -81,6 +81,11 @@ impl RestartScheduler {
         self.pending.remove(service).is_some()
     }
 
+    /// Removes every pending restart, for shutdown or administrative reset.
+    pub fn take_all(&mut self) -> Vec<ScheduledRestart> {
+        std::mem::take(&mut self.pending).into_values().collect()
+    }
+
     pub fn next_deadline(&self) -> Option<u64> {
         self.pending.values().map(|item| item.due_at_seconds).min()
     }
