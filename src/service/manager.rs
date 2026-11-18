@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use super::restart::{RestartLimit, RestartPolicy};
+use super::supervisor::{ExitDecision, ServiceSupervisor, SupervisorError};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceState {
     Disabled,
@@ -126,6 +129,8 @@ impl std::error::Error for ServiceRegistryError {}
 #[derive(Debug, Default)]
 pub struct ServiceRegistry {
     services: BTreeMap<String, ServiceRecord>,
+    supervisors: BTreeMap<String, ServiceSupervisor>,
+    shutting_down: bool,
 }
 
 impl ServiceRegistry {
@@ -134,7 +139,9 @@ impl ServiceRegistry {
         if self.services.contains_key(&record.name) {
             return Err(ServiceRegistryError::AlreadyExists(record.name));
         }
-        self.services.insert(record.name.clone(), record);
+        let name = record.name.clone();
+        self.services.insert(name.clone(), record);
+        self.supervisors.insert(name, ServiceSupervisor::default());
         Ok(())
     }
 
@@ -153,6 +160,52 @@ impl ServiceRegistry {
             .get_mut(name)
             .ok_or_else(|| ServiceRegistryError::NotFound(name.to_owned()))?;
         record.transition(next, pid)
+    }
+
+    /// Applies a process exit using the restart budget owned by this service.
+    /// During shutdown, restart policy is overridden with `Never`.
+    pub fn handle_exit(
+        &mut self,
+        name: &str,
+        policy: RestartPolicy,
+        exited_successfully: bool,
+        now_seconds: u64,
+        limit: RestartLimit,
+    ) -> Result<ExitDecision, SupervisorError> {
+        let service = self
+            .services
+            .get_mut(name)
+            .ok_or_else(|| SupervisorError::Registry(ServiceRegistryError::NotFound(name.to_owned())))?;
+        let supervisor = self
+            .supervisors
+            .get_mut(name)
+            .expect("every registered service has a supervisor");
+        let effective_policy = if self.shutting_down {
+            RestartPolicy::Never
+        } else {
+            policy
+        };
+        supervisor.handle_exit(service, effective_policy, exited_successfully, now_seconds, limit)
+    }
+
+    /// Prevents any service exit from scheduling a restart.
+    pub fn begin_shutdown(&mut self) {
+        self.shutting_down = true;
+    }
+
+    /// Re-enables normal restart policy after an aborted shutdown.
+    pub fn cancel_shutdown(&mut self) {
+        self.shutting_down = false;
+    }
+
+    /// Returns whether the registry is currently suppressing restarts.
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down
+    }
+
+    /// Number of restart attempts retained for a specific registered service.
+    pub fn scheduled_restart_count(&self, name: &str) -> Option<usize> {
+        self.supervisors.get(name).map(ServiceSupervisor::scheduled_count)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &ServiceRecord> {
@@ -269,6 +322,62 @@ mod tests {
         assert!(record.transition(ServiceState::Starting, None).is_err());
         record.transition(ServiceState::Inactive, None).unwrap();
         record.transition(ServiceState::Starting, None).unwrap();
+    }
+
+    #[test]
+    fn restart_budgets_are_independent_per_registered_service() {
+        let mut registry = ServiceRegistry::default();
+        registry.register(ServiceRecord::new("alpha").unwrap()).unwrap();
+        registry.register(ServiceRecord::new("beta").unwrap()).unwrap();
+        for name in ["alpha", "beta"] {
+            registry.transition(name, ServiceState::Starting, None).unwrap();
+            registry.transition(name, ServiceState::Running, Some(7)).unwrap();
+        }
+
+        let limit = RestartLimit { max_restarts: 1, window_seconds: 30, delay_seconds: 3 };
+        assert_eq!(registry.handle_exit("alpha", RestartPolicy::OnFailure, false, 1, limit).unwrap(),
+            ExitDecision::RestartScheduled { delay_seconds: 3 });
+        assert_eq!(registry.handle_exit("beta", RestartPolicy::OnFailure, false, 1, limit).unwrap(),
+            ExitDecision::RestartScheduled { delay_seconds: 3 });
+        assert_eq!(registry.scheduled_restart_count("alpha"), Some(1));
+        assert_eq!(registry.scheduled_restart_count("beta"), Some(1));
+    }
+
+    #[test]
+    fn shutdown_suppresses_restart_scheduling() {
+        let mut registry = ServiceRegistry::default();
+        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
+        registry.transition("worker", ServiceState::Starting, None).unwrap();
+        registry.transition("worker", ServiceState::Running, Some(9)).unwrap();
+        registry.begin_shutdown();
+
+        assert_eq!(registry.handle_exit("worker", RestartPolicy::Always, false, 1, RestartLimit::default()).unwrap(),
+            ExitDecision::Stopped);
+        let service = registry.get("worker").unwrap();
+        assert_eq!(service.state, ServiceState::Failed);
+        assert_eq!(registry.scheduled_restart_count("worker"), Some(0));
+        assert!(registry.is_shutting_down());
+    }
+
+    #[test]
+    fn cancelling_shutdown_restores_restart_policy() {
+        let mut registry = ServiceRegistry::default();
+        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
+        registry.transition("worker", ServiceState::Starting, None).unwrap();
+        registry.transition("worker", ServiceState::Running, Some(9)).unwrap();
+        registry.begin_shutdown();
+        registry.cancel_shutdown();
+
+        assert_eq!(registry.handle_exit("worker", RestartPolicy::Always, false, 1, RestartLimit::default()).unwrap(),
+            ExitDecision::RestartScheduled { delay_seconds: 2 });
+        assert!(!registry.is_shutting_down());
+    }
+
+    #[test]
+    fn handling_exit_for_unknown_service_reports_not_found() {
+        let mut registry = ServiceRegistry::default();
+        assert_eq!(registry.handle_exit("missing", RestartPolicy::Always, false, 1, RestartLimit::default()),
+            Err(SupervisorError::Registry(ServiceRegistryError::NotFound("missing".into()))));
     }
 
     #[test]
