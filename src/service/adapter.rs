@@ -82,7 +82,7 @@ mod tests {
             environment: Default::default(),
             working_directory: None,
             timeout_ms: 1_000,
-            restart_policy: super::super::super::restart::RestartPolicy::OnFailure,
+            restart_policy: super::super::restart::RestartPolicy::OnFailure,
         };
         let stop = StopAction {
             service: "worker".into(),
