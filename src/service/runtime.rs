@@ -461,6 +461,9 @@ mod tests {
                 RuntimeEventError::InvalidPid(0)
             ))
         ));
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Starting);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Starting
+        );
     }
 }
