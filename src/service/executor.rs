@@ -387,6 +387,34 @@ mod tests {
     }
 
     #[test]
+    fn shutdown_cancels_pending_restart_without_spawning_process() {
+        let plan =
+            LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
+        let mut coordinator = LifecycleCoordinator::new(plan);
+        let mut registry = ServiceRegistry::default();
+        registry
+            .register(ServiceRecord::new("worker").unwrap())
+            .unwrap();
+        registry
+            .transition("worker", ServiceState::Starting, None)
+            .unwrap();
+        let mut executor = RuntimeExecutor::new(FakeAdapter {
+            events: VecDeque::new(),
+            next_pid: 0,
+        });
+        let action = coordinator.start_action_for("worker").unwrap();
+        executor.restart_scheduler.schedule(action, 10, 30).unwrap();
+
+        executor
+            .begin_shutdown(&mut coordinator, &mut registry)
+            .unwrap();
+
+        assert!(executor.restart_scheduler().is_empty());
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
+        assert!(registry.is_shutting_down());
+    }
+
+    #[test]
     fn failed_due_restart_moves_service_to_failed() {
         struct FailingAdapter;
         impl RuntimeAdapter for FailingAdapter {
