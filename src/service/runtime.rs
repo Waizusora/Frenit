@@ -139,6 +139,100 @@ impl RuntimeEvent {
     }
 }
 
+/// Result of applying one validated runtime event to Frenit's state model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeDispatchOutcome {
+    StartAcknowledged,
+    StartFailed { failure: RuntimeFailure },
+    ProcessExit(ExitDecision),
+    StopAcknowledged,
+    StopFailed { failure: RuntimeFailure },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeDispatchError {
+    InvalidEvent(RuntimeEventError),
+    Coordinator(LifecycleCoordinatorError),
+    Supervisor(SupervisorError),
+}
+
+impl std::fmt::Display for RuntimeDispatchError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidEvent(error) => write!(formatter, "{error}"),
+            Self::Coordinator(error) => write!(formatter, "{error}"),
+            Self::Supervisor(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for RuntimeDispatchError {}
+
+impl From<RuntimeEventError> for RuntimeDispatchError {
+    fn from(error: RuntimeEventError) -> Self {
+        Self::InvalidEvent(error)
+    }
+}
+
+impl From<LifecycleCoordinatorError> for RuntimeDispatchError {
+    fn from(error: LifecycleCoordinatorError) -> Self {
+        Self::Coordinator(error)
+    }
+}
+
+impl From<SupervisorError> for RuntimeDispatchError {
+    fn from(error: SupervisorError) -> Self {
+        Self::Supervisor(error)
+    }
+}
+
+/// Applies an adapter observation to the lifecycle coordinator or service registry.
+///
+/// The caller supplies the configured restart policy and limit for process-exit
+/// handling. This function performs no native process operation or waiting.
+pub fn dispatch_runtime_event(
+    coordinator: &mut LifecycleCoordinator,
+    registry: &mut ServiceRegistry,
+    event: RuntimeEvent,
+    restart_policy: RestartPolicy,
+    restart_limit: RestartLimit,
+) -> Result<RuntimeDispatchOutcome, RuntimeDispatchError> {
+    event.validate()?;
+
+    match event {
+        RuntimeEvent::StartSucceeded { service, pid } => {
+            coordinator.complete_start(registry, &service, Some(pid))?;
+            Ok(RuntimeDispatchOutcome::StartAcknowledged)
+        }
+        RuntimeEvent::StartFailed { service, failure } => {
+            coordinator.complete_start(registry, &service, None)?;
+            Ok(RuntimeDispatchOutcome::StartFailed { failure })
+        }
+        RuntimeEvent::ProcessExited {
+            service,
+            status,
+            observed_at_seconds,
+        } => {
+            let decision = registry.handle_exit(
+                &service,
+                restart_policy,
+                status.succeeded(),
+                observed_at_seconds,
+                restart_limit,
+            )?;
+            Ok(RuntimeDispatchOutcome::ProcessExit(decision))
+        }
+        RuntimeEvent::StopSucceeded { service } => {
+            coordinator.complete_stop(registry, &service, true)?;
+            Ok(RuntimeDispatchOutcome::StopAcknowledged)
+        }
+        RuntimeEvent::StopFailed { service, failure } => {
+            coordinator.complete_stop(registry, &service, false)?;
+            Ok(RuntimeDispatchOutcome::StopFailed { failure })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
