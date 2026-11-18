@@ -87,7 +87,7 @@ pub struct RuntimeExecutor<A> {
 }
 
 impl<A: RuntimeAdapter> RuntimeExecutor<A> {
-    pub const fn new(adapter: A) -> Self {
+    pub fn new(adapter: A) -> Self {
         Self { adapter, restart_scheduler: RestartScheduler::default() }
     }
 
