@@ -252,6 +252,14 @@ pub fn dispatch_runtime_event(
                     },
                 ));
             }
+            if registry
+                .get(&service)
+                .is_some_and(|record| record.state == super::manager::ServiceState::Stopping)
+            {
+                coordinator.complete_stop(registry, &service, true)?;
+                return Ok(RuntimeDispatchOutcome::ProcessExit(ExitDecision::Stopped));
+            }
+
             let decision = registry.handle_exit(
                 &service,
                 restart_policy,
@@ -515,6 +523,45 @@ mod tests {
             RuntimeDispatchOutcome::StopFailed { failure }
         );
         assert_eq!(registry.get("worker").unwrap().state, ServiceState::Failed);
+    }
+
+    #[test]
+    fn process_exit_during_shutdown_completes_the_in_flight_stop() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        coordinator.begin_shutdown(&mut registry).unwrap();
+        coordinator.next_action(&mut registry).unwrap();
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::ProcessExited {
+                    service: "worker".into(),
+                    pid: 42,
+                    status: ProcessExitStatus::Signaled { signal: 15 },
+                    observed_at_seconds: 20,
+                },
+                RestartPolicy::Always,
+                RestartLimit::default(),
+            )
+            .unwrap(),
+            RuntimeDispatchOutcome::ProcessExit(ExitDecision::Stopped)
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
+        assert_eq!(registry.get("worker").unwrap().pid, None);
+        assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
     }
 
     #[test]
