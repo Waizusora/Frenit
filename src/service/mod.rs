@@ -1,3 +1,4 @@
+pub mod adapter;
 pub mod coordinator;
 pub mod definition;
 pub mod dependency;
