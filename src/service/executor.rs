@@ -224,7 +224,6 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
         Ok(Some(outcome))
     }
 
-
     /// Polls one event and derives restart policy from the validated service plan.
     ///
     /// This avoids applying one caller-supplied policy to every service.
@@ -234,30 +233,33 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
         registry: &mut ServiceRegistry,
         restart_limit: RestartLimit,
     ) -> Result<Option<RuntimeDispatchOutcome>, RuntimeExecutorError> {
-        let Some(event) = self.adapter.poll_event().map_err(RuntimeExecutorError::AdapterPoll)? else {
+        let Some(event) = self
+            .adapter
+            .poll_event()
+            .map_err(RuntimeExecutorError::AdapterPoll)?
+        else {
             return Ok(None);
         };
 
         let restart_policy = match &event {
-            super::runtime::RuntimeEvent::ProcessExited { service, .. } => coordinator
-                .start_action_for(service)
-                .ok_or_else(|| RuntimeExecutorError::MissingStartAction(service.clone()))?
-                .restart_policy,
+            super::runtime::RuntimeEvent::ProcessExited { service, .. } => {
+                coordinator
+                    .start_action_for(service)
+                    .ok_or_else(|| RuntimeExecutorError::MissingStartAction(service.clone()))?
+                    .restart_policy
+            },
             _ => RestartPolicy::Never,
         };
         let restart_observation = match &event {
-            super::runtime::RuntimeEvent::ProcessExited { service, observed_at_seconds, .. } => {
-                Some((service.clone(), *observed_at_seconds))
-            }
+            super::runtime::RuntimeEvent::ProcessExited {
+                service,
+                observed_at_seconds,
+                ..
+            } => Some((service.clone(), *observed_at_seconds)),
             _ => None,
         };
-        let outcome = dispatch_runtime_event(
-            coordinator,
-            registry,
-            event,
-            restart_policy,
-            restart_limit,
-        )?;
+        let outcome =
+            dispatch_runtime_event(coordinator, registry, event, restart_policy, restart_limit)?;
 
         if let (
             Some((service, now_seconds)),
