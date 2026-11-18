@@ -22,6 +22,26 @@ use super::runtime::{RuntimeEvent, RuntimeFailure};
 /// Timeout enforcement, process waiting/reaping, and event delivery are
 /// responsibilities of the implementation. The lifecycle layer remains
 /// platform-neutral.
+///
+/// Timeout contract:
+/// - `start` must honor `StartAction::timeout_ms`. It must not return success
+///   until process creation is confirmed, and must report
+///   `RuntimeFailureKind::TimedOut` when the start deadline expires.
+/// - `start` must be bounded: an implementation must not wait indefinitely
+///   for process readiness or perform unbounded work on the caller's event
+///   loop. If process creation itself is asynchronous, it should return the
+///   created PID promptly and report later readiness/failure as an event.
+/// - `request_stop` must return promptly after accepting or rejecting the
+///   request. It must honor `StopAction::timeout_ms` while supervising the
+///   stop operation, including any platform-defined graceful-to-forced
+///   termination sequence.
+/// - A stop timeout must be reported as `StopFailed` with failure kind
+///   `TimedOut`, and only after the adapter has completed the platform's
+///   required cleanup/reaping. It must not emit a later success for the same
+///   stop request.
+/// - Timeout measurement must use a monotonic clock. Wall-clock changes must
+///   not extend or shorten lifecycle deadlines.
+
 pub trait RuntimeAdapter {
     /// Creates a process from a validated startup action.
     fn start(&mut self, action: &StartAction) -> Result<u32, RuntimeFailure>;
@@ -85,6 +105,8 @@ mod tests {
         runtime.request_stop(&stop, 41).unwrap();
         assert_eq!(runtime.started, vec!["worker"]);
         assert_eq!(runtime.stop_requests, vec![("worker".into(), 41)]);
+        assert_eq!(start.timeout_ms, 1_000);
+        assert_eq!(stop.timeout_ms, 500);
     }
 
     #[test]
