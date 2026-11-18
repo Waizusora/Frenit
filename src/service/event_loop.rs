@@ -34,8 +34,11 @@ impl RuntimeEventLoop {
         restart_limit: RestartLimit,
     ) -> Result<RuntimeLoopOutcome, RuntimeExecutorError> {
         let due_restarts = executor.execute_due_restarts(now_seconds, registry)?;
-        let lifecycle_action = executor.execute_next(coordinator, registry)?;
+        // Resolve an asynchronous result before asking the coordinator for
+        // another action. In particular, stop requests remain in-flight until
+        // their completion event is consumed.
         let event = executor.poll_event_from_plan(coordinator, registry, restart_limit)?;
+        let lifecycle_action = executor.execute_next(coordinator, registry)?;
         Ok(RuntimeLoopOutcome {
             phase: coordinator.phase(),
             due_restarts,
@@ -153,4 +156,76 @@ mod tests {
         ));
         assert_eq!(executor.adapter().events.len(), 1);
     }
+    #[test]
+    fn stop_completion_is_polled_before_requesting_the_next_shutdown_action() {
+        let plan = LifecyclePlan::build(&[
+            ServiceDefinition::new("alpha", "/sbin/alpha"),
+            ServiceDefinition::new("beta", "/sbin/beta"),
+        ])
+        .unwrap();
+        let mut coordinator = LifecycleCoordinator::new(plan);
+        let mut registry = ServiceRegistry::default();
+        registry.register(ServiceRecord::new("alpha").unwrap()).unwrap();
+        registry.register(ServiceRecord::new("beta").unwrap()).unwrap();
+        let mut executor = RuntimeExecutor::new(FakeAdapter {
+            events: VecDeque::new(),
+            next_pid: 100,
+        });
+
+        // Complete both startup actions and advance the coordinator to Running.
+        for _ in 0..3 {
+            RuntimeEventLoop::step(
+                &mut executor,
+                &mut coordinator,
+                &mut registry,
+                10,
+                RestartLimit::default(),
+            )
+            .unwrap();
+        }
+        assert_eq!(coordinator.phase(), LifecyclePhase::Running);
+
+        executor
+            .begin_shutdown(&mut coordinator, &mut registry)
+            .unwrap();
+
+        // First reverse-order stop request remains in-flight awaiting an event.
+        let first = RuntimeEventLoop::step(
+            &mut executor,
+            &mut coordinator,
+            &mut registry,
+            11,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        assert!(matches!(
+            first.lifecycle_action,
+            Some(RuntimeExecutionOutcome::StopRequested { service, .. }) if service == "beta"
+        ));
+
+        executor.adapter_mut().events.push_back(RuntimeEvent::StopSucceeded {
+            service: "beta".into(),
+        });
+
+        // The queued completion is consumed before requesting alpha's stop.
+        let second = RuntimeEventLoop::step(
+            &mut executor,
+            &mut coordinator,
+            &mut registry,
+            12,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        assert!(matches!(
+            second.event,
+            Some(RuntimeDispatchOutcome::StopAcknowledged)
+        ));
+        assert!(matches!(
+            second.lifecycle_action,
+            Some(RuntimeExecutionOutcome::StopRequested { service, .. }) if service == "alpha"
+        ));
+        assert_eq!(registry.get("beta").unwrap().state, ServiceState::Inactive);
+        assert_eq!(registry.get("alpha").unwrap().state, ServiceState::Stopping);
+    }
+
 }
