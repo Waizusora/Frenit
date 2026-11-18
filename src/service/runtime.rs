@@ -102,7 +102,9 @@ impl std::fmt::Display for RuntimeEventError {
             Self::EmptyServiceName => write!(formatter, "runtime event has an empty service name"),
             Self::InvalidPid(pid) => write!(formatter, "runtime event has invalid PID {pid}"),
             Self::EmptyFailureMessage => write!(formatter, "runtime failure message is empty"),
-            Self::InvalidSignal(signal) => write!(formatter, "runtime event has invalid signal {signal}"),
+            Self::InvalidSignal(signal) => {
+                write!(formatter, "runtime event has invalid signal {signal}")
+            }
         }
     }
 }
@@ -171,7 +173,10 @@ mod tests {
             service: "network".into(),
             failure: RuntimeFailure::new(RuntimeFailureKind::WaitFailed, "  "),
         };
-        assert_eq!(empty.validate(), Err(RuntimeEventError::EmptyFailureMessage));
+        assert_eq!(
+            empty.validate(),
+            Err(RuntimeEventError::EmptyFailureMessage)
+        );
     }
 
     #[test]
