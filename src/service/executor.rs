@@ -247,7 +247,7 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
                     .start_action_for(service)
                     .ok_or_else(|| RuntimeExecutorError::MissingStartAction(service.clone()))?
                     .restart_policy
-            },
+            }
             _ => RestartPolicy::Never,
         };
         let restart_observation = match &event {
