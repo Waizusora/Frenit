@@ -107,9 +107,9 @@ impl LifecycleCoordinator {
                         self.shutdown_index += 1;
                         continue;
                     }
-                    let pid = record.pid.ok_or(ServiceRegistryError::PidRequired(
-                        ServiceState::Stopping,
-                    ))?;
+                    let pid = record
+                        .pid
+                        .ok_or(ServiceRegistryError::PidRequired(ServiceState::Stopping))?;
                     registry.transition(&action.service, ServiceState::Stopping, Some(pid))?;
                     let action = LifecycleAction::Stop(action);
                     self.in_flight = Some(action.clone());
@@ -214,7 +214,9 @@ mod tests {
     fn registry_with_services() -> ServiceRegistry {
         let mut registry = ServiceRegistry::default();
         for name in ["device", "network", "app"] {
-            registry.register(ServiceRecord::new(name).unwrap()).unwrap();
+            registry
+                .register(ServiceRecord::new(name).unwrap())
+                .unwrap();
         }
         registry
     }
@@ -234,7 +236,9 @@ mod tests {
             let action = coordinator.next_action(&mut registry).unwrap().unwrap();
             assert!(matches!(action, LifecycleAction::Start(ref item) if item.service == name));
             assert_eq!(registry.get(name).unwrap().state, ServiceState::Starting);
-            coordinator.complete_start(&mut registry, name, Some(pid)).unwrap();
+            coordinator
+                .complete_start(&mut registry, name, Some(pid))
+                .unwrap();
             assert_eq!(registry.get(name).unwrap().state, ServiceState::Running);
         }
 
@@ -255,7 +259,9 @@ mod tests {
 
         for (name, pid) in [("device", 10), ("network", 11), ("app", 12)] {
             coordinator.next_action(&mut registry).unwrap();
-            coordinator.complete_start(&mut registry, name, Some(pid)).unwrap();
+            coordinator
+                .complete_start(&mut registry, name, Some(pid))
+                .unwrap();
         }
         assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
         coordinator.begin_shutdown(&mut registry).unwrap();
@@ -264,7 +270,9 @@ mod tests {
             let action = coordinator.next_action(&mut registry).unwrap().unwrap();
             assert!(matches!(action, LifecycleAction::Stop(ref item) if item.service == name));
             assert_eq!(registry.get(name).unwrap().state, ServiceState::Stopping);
-            coordinator.complete_stop(&mut registry, name, true).unwrap();
+            coordinator
+                .complete_stop(&mut registry, name, true)
+                .unwrap();
             assert_eq!(registry.get(name).unwrap().state, ServiceState::Inactive);
         }
 
@@ -275,16 +283,16 @@ mod tests {
 
     #[test]
     fn failed_start_halts_startup_and_can_be_followed_by_shutdown() {
-        let plan = LifecyclePlan::build(&[
-            definition("device", &[]),
-            definition("app", &["device"]),
-        ])
-        .unwrap();
+        let plan =
+            LifecyclePlan::build(&[definition("device", &[]), definition("app", &["device"])])
+                .unwrap();
         let mut coordinator = LifecycleCoordinator::new(plan);
         let mut registry = registry_with_services();
 
         coordinator.next_action(&mut registry).unwrap();
-        coordinator.complete_start(&mut registry, "device", None).unwrap();
+        coordinator
+            .complete_start(&mut registry, "device", None)
+            .unwrap();
         assert_eq!(coordinator.phase(), LifecyclePhase::Failed);
         assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
         coordinator.begin_shutdown(&mut registry).unwrap();
@@ -303,8 +311,13 @@ mod tests {
             coordinator.complete_start(&mut registry, "app", Some(1)),
             Err(LifecycleCoordinatorError::UnexpectedService { .. })
         ));
-        assert_eq!(registry.get("device").unwrap().state, ServiceState::Starting);
-        coordinator.complete_start(&mut registry, "device", Some(1)).unwrap();
+        assert_eq!(
+            registry.get("device").unwrap().state,
+            ServiceState::Starting
+        );
+        coordinator
+            .complete_start(&mut registry, "device", Some(1))
+            .unwrap();
     }
 
     #[test]
