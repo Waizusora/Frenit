@@ -3,3 +3,4 @@ pub mod dependency;
 pub mod manager;
 pub mod plan;
 pub mod restart;
+pub mod supervisor;
