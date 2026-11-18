@@ -402,12 +402,16 @@ mod tests {
 
         let action = coordinator.next_action(&mut registry).unwrap().unwrap();
         assert!(matches!(action, LifecycleAction::Stop(ref item) if item.service == "device"));
-        coordinator.complete_stop(&mut registry, "device", true).unwrap();
+        coordinator
+            .complete_stop(&mut registry, "device", true)
+            .unwrap();
 
         assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
         assert_eq!(coordinator.phase(), LifecyclePhase::Complete);
-        assert_eq!(registry.get("device").unwrap().state, ServiceState::Inactive);
+        assert_eq!(
+            registry.get("device").unwrap().state,
+            ServiceState::Inactive
+        );
         assert_eq!(registry.get("network").unwrap().state, ServiceState::Failed);
     }
-
 }
