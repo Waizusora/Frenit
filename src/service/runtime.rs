@@ -275,7 +275,11 @@ pub fn dispatch_runtime_event(
             coordinator.complete_stop(registry, &service, true)?;
             Ok(RuntimeDispatchOutcome::StopAcknowledged)
         }
-        RuntimeEvent::StopFailed { service, pid, failure } => {
+        RuntimeEvent::StopFailed {
+            service,
+            pid,
+            failure,
+        } => {
             let expected_pid = registry.get(&service).and_then(|record| record.pid);
             if expected_pid != Some(pid) {
                 return Err(RuntimeDispatchError::InvalidEvent(
@@ -550,7 +554,10 @@ mod tests {
                 }
             ))
         );
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Stopping);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Stopping
+        );
         assert_eq!(registry.get("worker").unwrap().pid, Some(42));
     }
 
