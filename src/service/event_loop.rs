@@ -216,6 +216,7 @@ mod tests {
             .events
             .push_back(RuntimeEvent::StopSucceeded {
                 service: "beta".into(),
+                pid: 102,
             });
 
         // The queued completion is consumed before requesting alpha's stop.
