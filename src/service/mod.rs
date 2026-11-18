@@ -1,3 +1,4 @@
+pub mod coordinator;
 pub mod definition;
 pub mod dependency;
 pub mod manager;
