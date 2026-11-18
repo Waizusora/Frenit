@@ -342,10 +342,10 @@ mod tests {
             .adapter_mut()
             .events
             .push_back(RuntimeEvent::ProcessExited {
-            service: "worker".into(),
-            pid: 41,
-            status: ProcessExitStatus::Exited { code: 1 },
-            observed_at_seconds: 10,
+                service: "worker".into(),
+                pid: 41,
+                status: ProcessExitStatus::Exited { code: 1 },
+                observed_at_seconds: 10,
             });
 
         assert!(matches!(
@@ -439,10 +439,13 @@ mod tests {
             }
         }
 
-        let plan = LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
+        let plan =
+            LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
         let mut coordinator = LifecycleCoordinator::new(plan);
         let mut registry = ServiceRegistry::default();
-        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
+        registry
+            .register(ServiceRecord::new("worker").unwrap())
+            .unwrap();
         registry
             .transition("worker", ServiceState::Starting, None)
             .unwrap();
