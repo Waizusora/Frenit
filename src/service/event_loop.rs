@@ -53,7 +53,8 @@ mod tests {
     use crate::service::definition::ServiceDefinition;
     use crate::service::manager::{ServiceRecord, ServiceState};
     use crate::service::plan::{LifecyclePlan, StartAction, StopAction};
-    use crate::service::runtime::{RuntimeEvent, RuntimeFailure};
+    use crate::service::runtime::{ProcessExitStatus, RuntimeEvent, RuntimeFailure};
+    use crate::service::restart::RestartPolicy;
     use std::collections::VecDeque;
 
     #[derive(Default)]
@@ -102,18 +103,20 @@ mod tests {
 
     #[test]
     fn step_polls_no_more_than_one_event() {
-        let plan = LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
+        let mut definition = ServiceDefinition::new("worker", "/sbin/worker");
+        definition.restart_policy = RestartPolicy::OnFailure;
+        let plan = LifecyclePlan::build(&[definition]).unwrap();
         let mut coordinator = LifecycleCoordinator::new(plan);
         let mut registry = ServiceRegistry::default();
         registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
         let mut adapter = FakeAdapter { events: VecDeque::new(), next_pid: 0 };
-        adapter.events.push_back(RuntimeEvent::StartFailed {
-            service: "worker".into(),
-            failure: RuntimeFailure::new(super::super::runtime::RuntimeFailureKind::SpawnFailed, "failed"),
+        adapter.events.push_back(RuntimeEvent::ProcessExited {
+            service: "worker".into(), pid: 1,
+            status: ProcessExitStatus::Exited { code: 1 }, observed_at_seconds: 100,
         });
-        adapter.events.push_back(RuntimeEvent::StartFailed {
-            service: "worker".into(),
-            failure: RuntimeFailure::new(super::super::runtime::RuntimeFailureKind::SpawnFailed, "second"),
+        adapter.events.push_back(RuntimeEvent::ProcessExited {
+            service: "worker".into(), pid: 1,
+            status: ProcessExitStatus::Exited { code: 1 }, observed_at_seconds: 101,
         });
         let mut executor = RuntimeExecutor::new(adapter);
 
@@ -125,7 +128,7 @@ mod tests {
             100,
             RestartLimit::default(),
         ).unwrap();
-        assert!(matches!(result.event, Some(RuntimeDispatchOutcome::StartFailed { .. })));
+        assert!(matches!(result.event, Some(RuntimeDispatchOutcome::ProcessExit(_))));
         assert_eq!(executor.adapter().events.len(), 1);
     }
 }
