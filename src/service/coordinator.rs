@@ -332,4 +332,69 @@ mod tests {
             Err(LifecycleCoordinatorError::ActionInFlight)
         );
     }
+
+    #[test]
+    fn startup_failure_can_roll_back_previously_started_services() {
+        let plan = LifecyclePlan::build(&[
+            definition("device", &[]),
+            definition("network", &["device"]),
+            definition("app", &["network"]),
+        ])
+        .unwrap();
+        let mut coordinator = LifecycleCoordinator::new(plan);
+        let mut registry = registry_with_services();
+
+        coordinator.next_action(&mut registry).unwrap();
+        coordinator.complete_start(&mut registry, "device", Some(10)).unwrap();
+        coordinator.next_action(&mut registry).unwrap();
+        coordinator.complete_start(&mut registry, "network", None).unwrap();
+
+        assert_eq!(coordinator.phase(), LifecyclePhase::Failed);
+        assert_eq!(registry.get("device").unwrap().state, ServiceState::Running);
+        assert_eq!(registry.get("network").unwrap().state, ServiceState::Failed);
+        assert_eq!(registry.get("app").unwrap().state, ServiceState::Inactive);
+
+        coordinator.begin_shutdown(&mut registry).unwrap();
+        let action = coordinator.next_action(&mut registry).unwrap().unwrap();
+        assert!(matches!(action, LifecycleAction::Stop(ref item) if item.service == "device"));
+        coordinator.complete_stop(&mut registry, "device", true).unwrap();
+
+        assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
+        assert_eq!(coordinator.phase(), LifecyclePhase::Complete);
+        assert_eq!(registry.get("device").unwrap().state, ServiceState::Inactive);
+        assert_eq!(registry.get("network").unwrap().state, ServiceState::Failed);
+    }
+
+    #[test]
+    fn stop_failure_is_recorded_and_shutdown_continues() {
+        let plan = LifecyclePlan::build(&[
+            definition("device", &[]),
+            definition("network", &["device"]),
+        ])
+        .unwrap();
+        let mut coordinator = LifecycleCoordinator::new(plan);
+        let mut registry = registry_with_services();
+
+        for (name, pid) in [("device", 10), ("network", 11)] {
+            coordinator.next_action(&mut registry).unwrap();
+            coordinator.complete_start(&mut registry, name, Some(pid)).unwrap();
+        }
+        assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
+        coordinator.begin_shutdown(&mut registry).unwrap();
+
+        let action = coordinator.next_action(&mut registry).unwrap().unwrap();
+        assert!(matches!(action, LifecycleAction::Stop(ref item) if item.service == "network"));
+        coordinator.complete_stop(&mut registry, "network", false).unwrap();
+        assert_eq!(registry.get("network").unwrap().state, ServiceState::Failed);
+
+        let action = coordinator.next_action(&mut registry).unwrap().unwrap();
+        assert!(matches!(action, LifecycleAction::Stop(ref item) if item.service == "device"));
+        coordinator.complete_stop(&mut registry, "device", true).unwrap();
+
+        assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
+        assert_eq!(coordinator.phase(), LifecyclePhase::Complete);
+        assert_eq!(registry.get("device").unwrap().state, ServiceState::Inactive);
+        assert_eq!(registry.get("network").unwrap().state, ServiceState::Failed);
+    }
+
 }
