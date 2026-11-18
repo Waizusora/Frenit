@@ -410,7 +410,10 @@ mod tests {
             .unwrap();
 
         assert!(executor.restart_scheduler().is_empty());
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Inactive
+        );
         assert!(registry.is_shutting_down());
     }
 
