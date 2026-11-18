@@ -72,6 +72,12 @@ cargo run -- command list
 
 Before enabling a real PID 1 runtime, define and test process creation/exec/wait/reap, signal delivery and SIGCHLD semantics, mount and power operations, CLI-to-PID-1 IPC, credentials, file descriptors, and resource limits. POSIX source compatibility does not imply Linux binary ABI compatibility.
 
+## Wicofe integration
+
+Frenit is the canonical init-system project for Wicofe. Its cross-component integration boundary is documented in [WIC-SPEC-BOOT-FRENIT-001](https://github.com/Waizusora/Wicofe-Specs/blob/main/boot/FRENIT_INTEGRATION_CONTRACT_0.1.md). Kernel process and boot mechanisms are owned by [Wicofe-Kernel](https://github.com/Waizusora/Wicofe-Kernel), while public syscall definitions are owned by [Wicofe-ABI](https://github.com/Waizusora/Wicofe-ABI).
+
+Native PID 1 integration remains blocked on the kernel/ABI handoff, process lifecycle, signals, VFS, IPC and shutdown contracts. Do not install Frenit as PID 1 until the native QEMU conformance gates pass.
+
 ## License
 
 MIT
