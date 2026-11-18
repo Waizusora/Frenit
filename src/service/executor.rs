@@ -390,7 +390,7 @@ mod tests {
     fn shutdown_cancels_pending_restart_without_spawning_process() {
         let plan =
             LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
-        let coordinator = LifecycleCoordinator::new(plan);
+        let mut coordinator = LifecycleCoordinator::new(plan);
         let mut registry = ServiceRegistry::default();
         registry
             .register(ServiceRecord::new("worker").unwrap())
@@ -444,7 +444,7 @@ mod tests {
 
         let plan =
             LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
-        let mut coordinator = LifecycleCoordinator::new(plan);
+        let coordinator = LifecycleCoordinator::new(plan);
         let mut registry = ServiceRegistry::default();
         registry
             .register(ServiceRecord::new("worker").unwrap())
