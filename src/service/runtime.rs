@@ -89,9 +89,11 @@ pub enum RuntimeEvent {
     },
     StopSucceeded {
         service: String,
+        pid: u32,
     },
     StopFailed {
         service: String,
+        pid: u32,
         failure: RuntimeFailure,
     },
 }
@@ -103,6 +105,11 @@ pub enum RuntimeEventError {
     EmptyFailureMessage,
     InvalidSignal(i32),
     StaleProcessEvent {
+        service: String,
+        expected_pid: Option<u32>,
+        observed_pid: u32,
+    },
+    StaleStopEvent {
         service: String,
         expected_pid: Option<u32>,
         observed_pid: u32,
@@ -122,6 +129,10 @@ impl std::fmt::Display for RuntimeEventError {
                 formatter,
                 "stale process event for service '{service}': expected PID {expected_pid:?}, observed PID {observed_pid}"
             ),
+            Self::StaleStopEvent { service, expected_pid, observed_pid } => write!(
+                formatter,
+                "stale stop event for service '{service}': expected PID {expected_pid:?}, observed PID {observed_pid}"
+            ),
         }
     }
 }
@@ -134,7 +145,7 @@ impl RuntimeEvent {
             Self::StartSucceeded { service, .. }
             | Self::StartFailed { service, .. }
             | Self::ProcessExited { service, .. }
-            | Self::StopSucceeded { service }
+            | Self::StopSucceeded { service, .. }
             | Self::StopFailed { service, .. } => service,
         }
     }
@@ -146,11 +157,13 @@ impl RuntimeEvent {
         }
 
         match self {
-            Self::StartSucceeded { pid: 0, .. } => Err(RuntimeEventError::InvalidPid(0)),
+            Self::StartSucceeded { pid: 0, .. }
+            | Self::ProcessExited { pid: 0, .. }
+            | Self::StopSucceeded { pid: 0, .. }
+            | Self::StopFailed { pid: 0, .. } => Err(RuntimeEventError::InvalidPid(0)),
             Self::StartFailed { failure, .. } | Self::StopFailed { failure, .. } => {
                 failure.validate()
             }
-            Self::ProcessExited { pid: 0, .. } => Err(RuntimeEventError::InvalidPid(0)),
             Self::ProcessExited { status, .. } => status.validate(),
             _ => Ok(()),
         }
@@ -248,11 +261,31 @@ pub fn dispatch_runtime_event(
             )?;
             Ok(RuntimeDispatchOutcome::ProcessExit(decision))
         }
-        RuntimeEvent::StopSucceeded { service } => {
+        RuntimeEvent::StopSucceeded { service, pid } => {
+            let expected_pid = registry.get(&service).and_then(|record| record.pid);
+            if expected_pid != Some(pid) {
+                return Err(RuntimeDispatchError::InvalidEvent(
+                    RuntimeEventError::StaleStopEvent {
+                        service,
+                        expected_pid,
+                        observed_pid: pid,
+                    },
+                ));
+            }
             coordinator.complete_stop(registry, &service, true)?;
             Ok(RuntimeDispatchOutcome::StopAcknowledged)
         }
-        RuntimeEvent::StopFailed { service, failure } => {
+        RuntimeEvent::StopFailed { service, pid, failure } => {
+            let expected_pid = registry.get(&service).and_then(|record| record.pid);
+            if expected_pid != Some(pid) {
+                return Err(RuntimeDispatchError::InvalidEvent(
+                    RuntimeEventError::StaleStopEvent {
+                        service,
+                        expected_pid,
+                        observed_pid: pid,
+                    },
+                ));
+            }
             coordinator.complete_stop(registry, &service, false)?;
             Ok(RuntimeDispatchOutcome::StopFailed { failure })
         }
@@ -292,6 +325,7 @@ mod tests {
 
         let empty = RuntimeEvent::StopFailed {
             service: "network".into(),
+            pid: 1,
             failure: RuntimeFailure::new(RuntimeFailureKind::WaitFailed, "  "),
         };
         assert_eq!(
@@ -336,6 +370,7 @@ mod tests {
     fn event_exposes_its_service_name() {
         let event = RuntimeEvent::StopSucceeded {
             service: "storage".into(),
+            pid: 7,
         };
         assert_eq!(event.service(), "storage");
     }
@@ -466,6 +501,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::StopFailed {
                     service: "worker".into(),
+                    pid: 42,
                     failure: failure.clone(),
                 },
                 RestartPolicy::Never,
