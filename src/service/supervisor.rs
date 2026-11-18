@@ -1,5 +1,7 @@
 use super::manager::{ServiceRecord, ServiceRegistryError, ServiceState};
-use super::restart::{should_restart, RestartLimit, RestartLimitError, RestartPolicy, RestartTracker};
+use super::restart::{
+    should_restart, RestartLimit, RestartLimitError, RestartPolicy, RestartTracker,
+};
 
 /// Outcome of processing a service process exit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +35,10 @@ impl std::fmt::Display for SupervisorError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ServiceNotRunning(state) => {
-                write!(formatter, "cannot process process exit while service is {state:?}")
+                write!(
+                    formatter,
+                    "cannot process process exit while service is {state:?}"
+                )
             }
             Self::Registry(error) => write!(formatter, "{error}"),
             Self::RestartLimit(error) => write!(formatter, "{error}"),
@@ -74,9 +79,9 @@ impl ServiceSupervisor {
             return Err(SupervisorError::ServiceNotRunning(service.state));
         }
 
-        let delay = self
-            .restart_tracker
-            .schedule(policy, exited_successfully, now_seconds, limit)?;
+        let delay =
+            self.restart_tracker
+                .schedule(policy, exited_successfully, now_seconds, limit)?;
 
         let exit_state = if exited_successfully {
             ServiceState::Inactive
@@ -134,7 +139,10 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(decision, ExitDecision::RestartScheduled { delay_seconds: 2 });
+        assert_eq!(
+            decision,
+            ExitDecision::RestartScheduled { delay_seconds: 2 }
+        );
         assert_eq!(service.state, ServiceState::Starting);
         assert_eq!(service.pid, None);
         assert_eq!(supervisor.scheduled_count(), 1);
@@ -212,13 +220,7 @@ mod tests {
 
         assert_eq!(
             supervisor
-                .handle_exit(
-                    &mut first,
-                    RestartPolicy::OnFailure,
-                    false,
-                    1,
-                    limit,
-                )
+                .handle_exit(&mut first, RestartPolicy::OnFailure, false, 1, limit,)
                 .unwrap(),
             ExitDecision::RestartScheduled { delay_seconds: 4 }
         );
@@ -226,13 +228,7 @@ mod tests {
         let mut second = running_service();
         assert_eq!(
             supervisor
-                .handle_exit(
-                    &mut second,
-                    RestartPolicy::OnFailure,
-                    false,
-                    2,
-                    limit,
-                )
+                .handle_exit(&mut second, RestartPolicy::OnFailure, false, 2, limit,)
                 .unwrap(),
             ExitDecision::RestartLimitReached
         );
@@ -250,13 +246,7 @@ mod tests {
         };
 
         assert!(matches!(
-            supervisor.handle_exit(
-                &mut service,
-                RestartPolicy::Always,
-                false,
-                1,
-                invalid_limit,
-            ),
+            supervisor.handle_exit(&mut service, RestartPolicy::Always, false, 1, invalid_limit,),
             Err(SupervisorError::RestartLimit(RestartLimitError::ZeroWindow))
         ));
         assert_eq!(service.state, ServiceState::Running);
