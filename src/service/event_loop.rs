@@ -70,11 +70,7 @@ mod tests {
             Ok(self.next_pid)
         }
 
-        fn request_stop(
-            &mut self,
-            _action: &StopAction,
-            _pid: u32,
-        ) -> Result<(), RuntimeFailure> {
+        fn request_stop(&mut self, _action: &StopAction, _pid: u32) -> Result<(), RuntimeFailure> {
             Ok(())
         }
 
@@ -113,10 +109,7 @@ mod tests {
         ));
         assert_eq!(result.event, None);
         assert_eq!(result.next_deadline_seconds, None);
-        assert_eq!(
-            registry.get("worker").unwrap().state,
-            ServiceState::Running
-        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Running);
     }
 
     #[test]
