@@ -23,7 +23,10 @@ impl std::fmt::Display for RestartSchedulerError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AlreadyScheduled(service) => {
-                write!(formatter, "service '{service}' already has a pending restart")
+                write!(
+                    formatter,
+                    "service '{service}' already has a pending restart"
+                )
             }
         }
     }
@@ -51,19 +54,25 @@ impl RestartScheduler {
         let due_at_seconds = now_seconds.saturating_add(delay_seconds);
         self.pending.insert(
             service,
-            ScheduledRestart { action, due_at_seconds },
+            ScheduledRestart {
+                action,
+                due_at_seconds,
+            },
         );
         Ok(due_at_seconds)
     }
 
     /// Removes and returns every restart whose deadline is at or before now.
     pub fn take_due(&mut self, now_seconds: u64) -> Vec<ScheduledRestart> {
-        let mut due_names: Vec<_> = self.pending.iter()
+        let mut due_names: Vec<_> = self
+            .pending
+            .iter()
             .filter(|(_, item)| item.due_at_seconds <= now_seconds)
             .map(|(name, item)| (item.due_at_seconds, name.clone()))
             .collect();
         due_names.sort();
-        due_names.into_iter()
+        due_names
+            .into_iter()
             .filter_map(|(_, name)| self.pending.remove(&name))
             .collect()
     }
@@ -76,8 +85,13 @@ impl RestartScheduler {
         self.pending.values().map(|item| item.due_at_seconds).min()
     }
 
-    pub fn pending_count(&self) -> usize { self.pending.len() }
-    pub fn is_empty(&self) -> bool { self.pending.is_empty() }
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -87,9 +101,12 @@ mod tests {
 
     fn action(service: &str) -> StartAction {
         StartAction {
-            service: service.into(), executable: format!("/sbin/{service}"),
-            arguments: Vec::new(), environment: Default::default(),
-            working_directory: None, timeout_ms: 1_000,
+            service: service.into(),
+            executable: format!("/sbin/{service}"),
+            arguments: Vec::new(),
+            environment: Default::default(),
+            working_directory: None,
+            timeout_ms: 1_000,
             restart_policy: RestartPolicy::OnFailure,
         }
     }
@@ -111,14 +128,22 @@ mod tests {
         scheduler.schedule(action("beta"), 5, 1).unwrap();
         scheduler.schedule(action("alpha"), 3, 3).unwrap();
         let due = scheduler.take_due(6);
-        assert_eq!(due.iter().map(|item| item.action.service.as_str()).collect::<Vec<_>>(), vec!["alpha", "beta", "zeta"]);
+        assert_eq!(
+            due.iter()
+                .map(|item| item.action.service.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha", "beta", "zeta"]
+        );
     }
 
     #[test]
     fn duplicate_pending_restart_is_rejected_and_can_be_cancelled() {
         let mut scheduler = RestartScheduler::default();
         scheduler.schedule(action("worker"), 1, 5).unwrap();
-        assert_eq!(scheduler.schedule(action("worker"), 2, 5), Err(RestartSchedulerError::AlreadyScheduled("worker".into())));
+        assert_eq!(
+            scheduler.schedule(action("worker"), 2, 5),
+            Err(RestartSchedulerError::AlreadyScheduled("worker".into()))
+        );
         assert!(scheduler.cancel("worker"));
         assert!(!scheduler.cancel("worker"));
     }
@@ -126,6 +151,9 @@ mod tests {
     #[test]
     fn deadline_addition_saturates_instead_of_wrapping() {
         let mut scheduler = RestartScheduler::default();
-        assert_eq!(scheduler.schedule(action("worker"), u64::MAX - 1, 5), Ok(u64::MAX));
+        assert_eq!(
+            scheduler.schedule(action("worker"), u64::MAX - 1, 5),
+            Ok(u64::MAX)
+        );
     }
 }
