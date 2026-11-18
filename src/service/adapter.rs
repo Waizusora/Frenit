@@ -41,7 +41,6 @@ use super::runtime::{RuntimeEvent, RuntimeFailure};
 ///   stop request.
 /// - Timeout measurement must use a monotonic clock. Wall-clock changes must
 ///   not extend or shorten lifecycle deadlines.
-
 pub trait RuntimeAdapter {
     /// Creates a process from a validated startup action.
     fn start(&mut self, action: &StartAction) -> Result<u32, RuntimeFailure>;
