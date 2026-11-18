@@ -24,6 +24,7 @@ impl ServiceState {
                 | (Inactive, Disabled)
                 | (Inactive, Starting)
                 | (Starting, Running)
+                | (Starting, Inactive)
                 | (Starting, Stopping)
                 | (Starting, Failed)
                 | (Running, Stopping)
