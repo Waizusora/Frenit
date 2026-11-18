@@ -64,7 +64,7 @@ The service lifecycle layer is split into validated definitions, dependency reso
 - `LifecyclePlan` builds deterministic startup actions and reverse-order shutdown actions.
 - `ServiceRegistry` tracks service state and maintains an independent restart supervisor for each registered service.
 - `LifecycleCoordinator` emits one action at a time, updates pending registry states, and requires the runtime to acknowledge each start/stop result before advancing.
-- `service::runtime` defines platform-neutral start, stop, and process-exit events, normalized exit status, and categorized runtime failures. Adapters validate events before forwarding acknowledgements to the coordinator or exit observations to the registry.
+- `service::runtime` defines platform-neutral start, stop, and process-exit events, normalized exit status, and categorized runtime failures. Its dispatcher validates events, acknowledges start/stop results through the coordinator, and forwards process exits to the registry's per-service restart supervisor.
 - A failed startup halts further startup actions. The runtime can initiate rollback through shutdown; only services that reached the running state receive stop actions, in reverse dependency order.
 - A failed stop is recorded as `Failed` and does not prevent the coordinator from attempting to stop remaining services.
 - Runtime-reported start/stop failures, including timeout outcomes, are acknowledged by the coordinator; deadline measurement and process termination remain runtime responsibilities.
