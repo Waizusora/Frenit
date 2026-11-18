@@ -4,6 +4,11 @@
 //! module intentionally contains no syscall numbers, OS handles, or process
 //! control implementation.
 
+use super::coordinator::{LifecycleCoordinator, LifecycleCoordinatorError};
+use super::manager::ServiceRegistry;
+use super::restart::{RestartLimit, RestartPolicy};
+use super::supervisor::{ExitDecision, SupervisorError};
+
 /// Broad failure categories understood by the lifecycle layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeFailureKind {
