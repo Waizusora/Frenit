@@ -4,6 +4,7 @@
 //! and at most one adapter event. The caller owns waiting and monotonic time.
 
 use super::adapter::RuntimeAdapter;
+use super::adapter::RuntimeAdapter;
 use super::coordinator::{LifecycleCoordinator, LifecyclePhase};
 use super::executor::{RuntimeExecutionOutcome, RuntimeExecutor, RuntimeExecutorError};
 use super::manager::ServiceRegistry;
