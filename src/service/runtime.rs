@@ -718,7 +718,10 @@ mod tests {
                 }
             ))
         );
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Inactive
+        );
         assert_eq!(registry.get("worker").unwrap().pid, None);
     }
 
@@ -772,7 +775,10 @@ mod tests {
             ))
         );
         assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
-        assert_eq!(coordinator.phase(), super::super::coordinator::LifecyclePhase::Shutdown);
+        assert_eq!(
+            coordinator.phase(),
+            super::super::coordinator::LifecyclePhase::Shutdown
+        );
     }
 
     #[test]
