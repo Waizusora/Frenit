@@ -239,3 +239,99 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
         Ok(outcomes)
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use crate::service::definition::ServiceDefinition;
+    use crate::service::manager::{ServiceRecord, ServiceState};
+    use crate::service::plan::LifecyclePlan;
+    use crate::service::runtime::{ProcessExitStatus, RuntimeEvent};
+
+    #[derive(Default)]
+    struct FakeAdapter {
+        events: VecDeque<RuntimeEvent>,
+        next_pid: u32,
+    }
+
+    impl RuntimeAdapter for FakeAdapter {
+        fn start(&mut self, _action: &super::super::plan::StartAction) -> Result<u32, RuntimeFailure> {
+            self.next_pid += 1;
+            Ok(self.next_pid)
+        }
+
+        fn request_stop(&mut self, _action: &super::super::plan::StopAction, _pid: u32) -> Result<(), RuntimeFailure> {
+            Ok(())
+        }
+
+        fn poll_event(&mut self) -> Result<Option<RuntimeEvent>, RuntimeFailure> {
+            Ok(self.events.pop_front())
+        }
+    }
+
+    #[test]
+    fn process_exit_is_scheduled_and_restarted_only_after_deadline() {
+        let plan = LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
+        let mut coordinator = LifecycleCoordinator::new(plan);
+        let mut registry = ServiceRegistry::default();
+        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
+        let mut executor = RuntimeExecutor::new(FakeAdapter { events: VecDeque::new(), next_pid: 40 });
+
+        assert_eq!(
+            executor.execute_next(&mut coordinator, &mut registry).unwrap(),
+            Some(RuntimeExecutionOutcome::Started { service: "worker".into(), pid: 41 })
+        );
+        executor.adapter_mut().events.push_back(RuntimeEvent::ProcessExited {
+            service: "worker".into(),
+            pid: 41,
+            status: ProcessExitStatus::Exited { code: 1 },
+            observed_at_seconds: 10,
+        });
+
+        assert!(matches!(
+            executor.poll_event(&mut coordinator, &mut registry, RestartPolicy::OnFailure, RestartLimit { max_restarts: 3, window_seconds: 30, delay_seconds: 2 }).unwrap(),
+            Some(RuntimeDispatchOutcome::ProcessExit(super::super::supervisor::ExitDecision::RestartScheduled { delay_seconds: 2 }))
+        ));
+        assert_eq!(executor.restart_scheduler().next_deadline(), Some(12));
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Starting);
+        assert!(executor.execute_due_restarts(11, &mut registry).unwrap().is_empty());
+
+        assert_eq!(
+            executor.execute_due_restarts(12, &mut registry).unwrap(),
+            vec![RuntimeExecutionOutcome::RestartStarted { service: "worker".into(), pid: 42 }]
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Running);
+        assert_eq!(registry.get("worker").unwrap().pid, Some(42));
+    }
+
+    #[test]
+    fn failed_due_restart_moves_service_to_failed() {
+        struct FailingAdapter;
+        impl RuntimeAdapter for FailingAdapter {
+            fn start(&mut self, _action: &super::super::plan::StartAction) -> Result<u32, RuntimeFailure> {
+                Err(RuntimeFailure::new(super::super::runtime::RuntimeFailureKind::SpawnFailed, "spawn failed"))
+            }
+            fn request_stop(&mut self, _action: &super::super::plan::StopAction, _pid: u32) -> Result<(), RuntimeFailure> { Ok(()) }
+            fn poll_event(&mut self) -> Result<Option<RuntimeEvent>, RuntimeFailure> { Ok(None) }
+        }
+
+        let plan = LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
+        let mut coordinator = LifecycleCoordinator::new(plan);
+        let mut registry = ServiceRegistry::default();
+        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
+        registry.transition("worker", ServiceState::Starting, None).unwrap();
+        registry.transition("worker", ServiceState::Running, Some(9)).unwrap();
+        registry.handle_exit("worker", RestartPolicy::Always, false, 1, RestartLimit::default()).unwrap();
+        let mut executor = RuntimeExecutor::new(FailingAdapter);
+        let action = coordinator.start_action_for("worker").unwrap();
+        executor.restart_scheduler.schedule(action, 1, 0).unwrap();
+
+        assert!(matches!(
+            executor.execute_due_restarts(1, &mut registry).unwrap().as_slice(),
+            [RuntimeExecutionOutcome::RestartStartFailed { service, .. }] if service == "worker"
+        ));
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Failed);
+    }
+}
