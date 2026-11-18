@@ -64,12 +64,13 @@ The service lifecycle layer is split into validated definitions, dependency reso
 - `LifecyclePlan` builds deterministic startup actions and reverse-order shutdown actions.
 - `ServiceRegistry` tracks service state and maintains an independent restart supervisor for each registered service.
 - `LifecycleCoordinator` emits one action at a time, updates pending registry states, and requires the runtime to acknowledge each start/stop result before advancing.
+- `service::runtime` defines platform-neutral start, stop, and process-exit events, normalized exit status, and categorized runtime failures. Adapters validate events before forwarding acknowledgements to the coordinator or exit observations to the registry.
 - A failed startup halts further startup actions. The runtime can initiate rollback through shutdown; only services that reached the running state receive stop actions, in reverse dependency order.
 - A failed stop is recorded as `Failed` and does not prevent the coordinator from attempting to stop remaining services.
 - Runtime-reported start/stop failures, including timeout outcomes, are acknowledged by the coordinator; deadline measurement and process termination remain runtime responsibilities.
 - Shutdown suppresses restart scheduling.
 
-The coordinator is deliberately runtime-neutral. It does not spawn, signal, wait for, or reap processes. A future Wicofe runtime adapter must perform each emitted action and acknowledge its result using the documented Wicofe process and signal ABI.
+The coordinator and runtime event contract are deliberately platform-neutral. They do not spawn, signal, wait for, or reap processes. Runtime adapters own native process operations and translate their results into validated Frenit events. A future Wicofe runtime adapter must perform each emitted action and acknowledge its result using the documented Wicofe process and signal ABI.
 
 ## Build and test
 
