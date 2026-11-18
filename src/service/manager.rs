@@ -405,9 +405,15 @@ mod tests {
     #[test]
     fn cancelling_shutdown_restores_restart_policy() {
         let mut registry = ServiceRegistry::default();
-        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
-        registry.transition("worker", ServiceState::Starting, None).unwrap();
-        registry.transition("worker", ServiceState::Running, Some(9)).unwrap();
+        registry
+            .register(ServiceRecord::new("worker").unwrap())
+            .unwrap();
+        registry
+            .transition("worker", ServiceState::Starting, None)
+            .unwrap();
+        registry
+            .transition("worker", ServiceState::Running, Some(9))
+            .unwrap();
         registry.begin_shutdown();
         registry.cancel_shutdown();
 
