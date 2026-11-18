@@ -144,7 +144,6 @@ impl RuntimeEvent {
     }
 }
 
-
 /// Result of applying one validated runtime event to Frenit's state model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeDispatchOutcome {
@@ -240,6 +239,7 @@ pub fn dispatch_runtime_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::manager::ServiceState;
 
     #[test]
     fn successful_start_requires_a_valid_service_and_pid() {
@@ -459,5 +459,4 @@ mod tests {
         ));
         assert_eq!(registry.get("worker").unwrap().state, ServiceState::Starting);
     }
-
 }
