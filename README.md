@@ -59,19 +59,21 @@ The CLI validates command shape and reports unimplemented runtime operations exp
 
 ## Service lifecycle foundation
 
-The service lifecycle layer is split into validated definitions, dependency resolution, lifecycle planning, registry state, restart supervision, and ordered coordination.
+The service lifecycle layer is split into validated definitions, dependency resolution, lifecycle planning, registry state, restart supervision, ordered coordination, and runtime execution.
 
 - `LifecyclePlan` builds deterministic startup actions and reverse-order shutdown actions.
 - `ServiceRegistry` tracks service state and maintains an independent restart supervisor for each registered service.
 - `LifecycleCoordinator` emits one action at a time, updates pending registry states, and requires the runtime to acknowledge each start/stop result before advancing.
 - `service::adapter::RuntimeAdapter` defines the platform boundary for process creation, stop requests, and non-blocking runtime event polling. A stop request is not treated as completed shutdown; the adapter must report completion only after the process is confirmed stopped and reaped. The trait does not prescribe native handles, syscall numbers, or a specific OS ABI.
-- `service::runtime` defines platform-neutral start, stop, and process-exit events, normalized exit status, and categorized runtime failures. Process-exit events carry the observed PID; the dispatcher rejects events whose PID does not match the service's currently tracked process, preventing delayed exit notifications from terminating a replacement process. It also validates event fields, acknowledges start/stop results through the coordinator, and forwards valid process exits to the registry's per-service restart supervisor.
+- `service::executor::RuntimeExecutor` obtains and executes one coordinator action at a time. It acknowledges a start only after the adapter returns a nonzero PID. It leaves a successful stop request in-flight until a later stop event confirms completion; adapter request failures are recorded as failed stops.
+- `service::runtime` defines platform-neutral start, stop, and process-exit events, normalized exit status, and categorized runtime failures. Process-exit events carry the observed PID; the dispatcher rejects events whose PID does not match the service's currently tracked process, preventing delayed exit notifications from terminating a replacement process. The dispatcher validates event fields, acknowledges start/stop results through the coordinator, and forwards valid process exits to the registry's per-service restart supervisor.
+- The executor's event polling is non-blocking and dispatches at most one event per call. Restart decisions are recorded by the supervisor; actual delayed restart scheduling and re-execution remain future runtime-loop responsibilities.
 - A failed startup halts further startup actions. The runtime can initiate rollback through shutdown; only services that reached the running state receive stop actions, in reverse dependency order.
 - A failed stop is recorded as `Failed` and does not prevent the coordinator from attempting to stop remaining services.
 - Runtime-reported start/stop failures, including timeout outcomes, are acknowledged by the coordinator; deadline measurement and process termination remain runtime responsibilities.
 - Shutdown suppresses restart scheduling.
 
-The coordinator and runtime event contract are deliberately platform-neutral. They do not spawn, signal, wait for, or reap processes. Runtime adapters own native process operations and translate their results into validated Frenit events. A future Wicofe runtime adapter must perform each emitted action and acknowledge its result using the documented Wicofe process and signal ABI.
+The coordinator, executor, and runtime event contract are deliberately platform-neutral. They do not implement native process operations. Runtime adapters own native process operations and translate their results into validated Frenit events. A future Wicofe runtime adapter must perform each emitted action and acknowledge its result using the documented Wicofe process and signal ABI.
 
 ## Build and test
 
