@@ -670,6 +670,112 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_process_exit_is_rejected_without_mutating_service_state() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+
+        let event = RuntimeEvent::ProcessExited {
+            service: "worker".into(),
+            pid: 42,
+            status: ProcessExitStatus::Exited { code: 0 },
+            observed_at_seconds: 10,
+        };
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                event.clone(),
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            )
+            .unwrap(),
+            RuntimeDispatchOutcome::ProcessExit(ExitDecision::Stopped)
+        );
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                event,
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::InvalidEvent(
+                RuntimeEventError::StaleProcessEvent {
+                    service: "worker".into(),
+                    expected_pid: None,
+                    observed_pid: 42,
+                }
+            ))
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
+        assert_eq!(registry.get("worker").unwrap().pid, None);
+    }
+
+    #[test]
+    fn duplicate_stop_acknowledgement_is_rejected_without_advancing_shutdown() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        coordinator.begin_shutdown(&mut registry).unwrap();
+        coordinator.next_action(&mut registry).unwrap();
+
+        let event = RuntimeEvent::StopSucceeded {
+            service: "worker".into(),
+            pid: 42,
+        };
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                event.clone(),
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            )
+            .unwrap(),
+            RuntimeDispatchOutcome::StopAcknowledged
+        );
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                event,
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::InvalidEvent(
+                RuntimeEventError::StaleStopEvent {
+                    service: "worker".into(),
+                    expected_pid: None,
+                    observed_pid: 42,
+                }
+            ))
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
+        assert_eq!(coordinator.phase(), super::super::coordinator::LifecyclePhase::Shutdown);
+    }
+
+    #[test]
     fn invalid_runtime_events_do_not_mutate_state() {
         let (mut coordinator, mut registry) = lifecycle_fixture();
         coordinator.next_action(&mut registry).unwrap();
