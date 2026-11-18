@@ -559,7 +559,10 @@ mod tests {
             .unwrap(),
             RuntimeDispatchOutcome::ProcessExit(ExitDecision::Stopped)
         );
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Inactive
+        );
         assert_eq!(registry.get("worker").unwrap().pid, None);
         assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
     }
