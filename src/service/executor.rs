@@ -74,6 +74,12 @@ impl From<RuntimeDispatchError> for RuntimeExecutorError {
     }
 }
 
+impl From<ServiceRegistryError> for RuntimeExecutorError {
+    fn from(error: ServiceRegistryError) -> Self {
+        Self::Registry(error)
+    }
+}
+
 /// Executes one coordinator action and dispatches asynchronous runtime events.
 pub struct RuntimeExecutor<A> {
     adapter: A,
