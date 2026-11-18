@@ -62,7 +62,9 @@ impl ProcessExitStatus {
 
     pub const fn validate(self) -> Result<(), RuntimeEventError> {
         match self {
-            Self::Signaled { signal: 0 } => Err(RuntimeEventError::InvalidSignal(0)),
+            Self::Signaled { signal } if signal <= 0 => {
+                Err(RuntimeEventError::InvalidSignal(signal))
+            }
             _ => Ok(()),
         }
     }
@@ -81,6 +83,7 @@ pub enum RuntimeEvent {
     },
     ProcessExited {
         service: String,
+        pid: u32,
         status: ProcessExitStatus,
         observed_at_seconds: u64,
     },
@@ -99,6 +102,11 @@ pub enum RuntimeEventError {
     InvalidPid(u32),
     EmptyFailureMessage,
     InvalidSignal(i32),
+    StaleProcessEvent {
+        service: String,
+        expected_pid: Option<u32>,
+        observed_pid: u32,
+    },
 }
 
 impl std::fmt::Display for RuntimeEventError {
@@ -110,6 +118,10 @@ impl std::fmt::Display for RuntimeEventError {
             Self::InvalidSignal(signal) => {
                 write!(formatter, "runtime event has invalid signal {signal}")
             }
+            Self::StaleProcessEvent { service, expected_pid, observed_pid } => write!(
+                formatter,
+                "stale process event for service '{service}': expected PID {expected_pid:?}, observed PID {observed_pid}"
+            ),
         }
     }
 }
@@ -138,6 +150,7 @@ impl RuntimeEvent {
             Self::StartFailed { failure, .. } | Self::StopFailed { failure, .. } => {
                 failure.validate()
             }
+            Self::ProcessExited { pid: 0, .. } => Err(RuntimeEventError::InvalidPid(0)),
             Self::ProcessExited { status, .. } => status.validate(),
             _ => Ok(()),
         }
@@ -212,9 +225,20 @@ pub fn dispatch_runtime_event(
         }
         RuntimeEvent::ProcessExited {
             service,
+            pid,
             status,
             observed_at_seconds,
         } => {
+            let expected_pid = registry.get(&service).and_then(|record| record.pid);
+            if expected_pid != Some(pid) {
+                return Err(RuntimeDispatchError::InvalidEvent(
+                    RuntimeEventError::StaleProcessEvent {
+                        service,
+                        expected_pid,
+                        observed_pid: pid,
+                    },
+                ));
+            }
             let decision = registry.handle_exit(
                 &service,
                 restart_policy,
@@ -289,12 +313,23 @@ mod tests {
         assert_eq!(
             RuntimeEvent::ProcessExited {
                 service: "worker".into(),
+                pid: 42,
                 status: ProcessExitStatus::Signaled { signal: 0 },
                 observed_at_seconds: 10,
             }
             .validate(),
             Err(RuntimeEventError::InvalidSignal(0))
         );
+    }
+
+    #[test]
+    fn process_exit_rejects_non_positive_signal_numbers() {
+        for signal in [0, -1] {
+            assert_eq!(
+                ProcessExitStatus::Signaled { signal }.validate(),
+                Err(RuntimeEventError::InvalidSignal(signal))
+            );
+        }
     }
 
     #[test]
@@ -387,6 +422,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::ProcessExited {
                     service: "worker".into(),
+                    pid: 42,
                     status: ProcessExitStatus::Exited { code: 1 },
                     observed_at_seconds: 10,
                 },
@@ -439,6 +475,62 @@ mod tests {
             RuntimeDispatchOutcome::StopFailed { failure }
         );
         assert_eq!(registry.get("worker").unwrap().state, ServiceState::Failed);
+    }
+
+    #[test]
+    fn stale_exit_from_previous_pid_cannot_stop_replacement_process() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::ProcessExited {
+                service: "worker".into(),
+                pid: 42,
+                status: ProcessExitStatus::Exited { code: 1 },
+                observed_at_seconds: 10,
+            },
+            RestartPolicy::OnFailure,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        registry.transition("worker", ServiceState::Running, Some(43)).unwrap();
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::ProcessExited {
+                    service: "worker".into(),
+                    pid: 42,
+                    status: ProcessExitStatus::Exited { code: 0 },
+                    observed_at_seconds: 11,
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::InvalidEvent(
+                RuntimeEventError::StaleProcessEvent {
+                    service: "worker".into(),
+                    expected_pid: Some(43),
+                    observed_pid: 42,
+                }
+            ))
+        );
+        assert_eq!(registry.get("worker").unwrap().pid, Some(43));
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Running);
     }
 
     #[test]
