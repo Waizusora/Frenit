@@ -13,6 +13,8 @@ use super::runtime::{RuntimeEvent, RuntimeFailure};
 /// - `start` returns a nonzero PID only after process creation succeeds.
 /// - `request_stop` only requests termination; it must not claim that the
 ///   process has exited.
+/// - `StopSucceeded` and `StopFailed` events must include the PID targeted
+///   by the stop request. The lifecycle dispatcher rejects stale acknowledgements.
 /// - A `StopSucceeded` event may be emitted only after the process is
 ///   confirmed stopped and reaped according to the platform contract.
 /// - `ProcessExited` events must carry the PID of the process actually
