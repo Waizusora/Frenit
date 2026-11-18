@@ -3,12 +3,12 @@
 //! Each step performs bounded work: due restarts, at most one lifecycle action,
 //! and at most one adapter event. The caller owns waiting and monotonic time.
 
+use super::adapter::RuntimeAdapter;
 use super::coordinator::{LifecycleCoordinator, LifecyclePhase};
 use super::executor::{RuntimeExecutionOutcome, RuntimeExecutor, RuntimeExecutorError};
 use super::manager::ServiceRegistry;
 use super::restart::RestartLimit;
 use super::runtime::RuntimeDispatchOutcome;
-use super::adapter::RuntimeAdapter;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeLoopOutcome {
@@ -53,8 +53,8 @@ mod tests {
     use crate::service::definition::ServiceDefinition;
     use crate::service::manager::{ServiceRecord, ServiceState};
     use crate::service::plan::{LifecyclePlan, StartAction, StopAction};
-    use crate::service::runtime::{ProcessExitStatus, RuntimeEvent, RuntimeFailure};
     use crate::service::restart::RestartPolicy;
+    use crate::service::runtime::{ProcessExitStatus, RuntimeEvent, RuntimeFailure};
     use std::collections::VecDeque;
 
     #[derive(Default)]
@@ -69,7 +69,11 @@ mod tests {
             Ok(self.next_pid)
         }
 
-        fn request_stop(&mut self, _action: &StopAction, _pid: u32) -> Result<(), RuntimeFailure> {
+        fn request_stop(
+            &mut self,
+            _action: &StopAction,
+            _pid: u32,
+        ) -> Result<(), RuntimeFailure> {
             Ok(())
         }
 
@@ -80,11 +84,17 @@ mod tests {
 
     #[test]
     fn step_executes_one_start_action_and_reports_loop_state() {
-        let plan = LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
+        let plan =
+            LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")]).unwrap();
         let mut coordinator = LifecycleCoordinator::new(plan);
         let mut registry = ServiceRegistry::default();
-        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
-        let mut executor = RuntimeExecutor::new(FakeAdapter { events: VecDeque::new(), next_pid: 40 });
+        registry
+            .register(ServiceRecord::new("worker").unwrap())
+            .unwrap();
+        let mut executor = RuntimeExecutor::new(FakeAdapter {
+            events: VecDeque::new(),
+            next_pid: 40,
+        });
 
         let result = RuntimeEventLoop::step(
             &mut executor,
@@ -92,13 +102,20 @@ mod tests {
             &mut registry,
             100,
             RestartLimit::default(),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(result.phase, LifecyclePhase::Startup);
-        assert!(matches!(result.lifecycle_action, Some(RuntimeExecutionOutcome::Started { pid: 41, .. })));
+        assert!(matches!(
+            result.lifecycle_action,
+            Some(RuntimeExecutionOutcome::Started { pid: 41, .. })
+        ));
         assert_eq!(result.event, None);
         assert_eq!(result.next_deadline_seconds, None);
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Running);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Running
+        );
     }
 
     #[test]
@@ -108,27 +125,39 @@ mod tests {
         let plan = LifecyclePlan::build(&[definition]).unwrap();
         let mut coordinator = LifecycleCoordinator::new(plan);
         let mut registry = ServiceRegistry::default();
-        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
-        let mut adapter = FakeAdapter { events: VecDeque::new(), next_pid: 0 };
+        registry
+            .register(ServiceRecord::new("worker").unwrap())
+            .unwrap();
+        let mut adapter = FakeAdapter {
+            events: VecDeque::new(),
+            next_pid: 0,
+        };
         adapter.events.push_back(RuntimeEvent::ProcessExited {
-            service: "worker".into(), pid: 1,
-            status: ProcessExitStatus::Exited { code: 1 }, observed_at_seconds: 100,
+            service: "worker".into(),
+            pid: 1,
+            status: ProcessExitStatus::Exited { code: 1 },
+            observed_at_seconds: 100,
         });
         adapter.events.push_back(RuntimeEvent::ProcessExited {
-            service: "worker".into(), pid: 1,
-            status: ProcessExitStatus::Exited { code: 1 }, observed_at_seconds: 101,
+            service: "worker".into(),
+            pid: 1,
+            status: ProcessExitStatus::Exited { code: 1 },
+            observed_at_seconds: 101,
         });
         let mut executor = RuntimeExecutor::new(adapter);
 
-        // The coordinator action is created first; the queued event acknowledges it.
         let result = RuntimeEventLoop::step(
             &mut executor,
             &mut coordinator,
             &mut registry,
             100,
             RestartLimit::default(),
-        ).unwrap();
-        assert!(matches!(result.event, Some(RuntimeDispatchOutcome::ProcessExit(_))));
+        )
+        .unwrap();
+        assert!(matches!(
+            result.event,
+            Some(RuntimeDispatchOutcome::ProcessExit(_))
+        ));
         assert_eq!(executor.adapter().events.len(), 1);
     }
 }
