@@ -80,7 +80,11 @@ impl LifecycleCoordinator {
 
     /// Returns the validated startup action for a service, if it is in this plan.
     pub fn start_action_for(&self, service: &str) -> Option<StartAction> {
-        self.plan.startup.iter().find(|action| action.service == service).cloned()
+        self.plan
+            .startup
+            .iter()
+            .find(|action| action.service == service)
+            .cloned()
     }
 
     /// Returns the next ordered action and updates the registry to its pending state.
