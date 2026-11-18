@@ -20,6 +20,174 @@ pub enum RuntimeFailureKind {
     SignalFailed,
     ProtocolError,
     Other,
+    fn lifecycle_fixture() -> (LifecycleCoordinator, ServiceRegistry) {
+        use crate::service::definition::ServiceDefinition;
+        use crate::service::manager::ServiceRecord;
+        use crate::service::plan::LifecyclePlan;
+
+        let plan = LifecyclePlan::build(&[ServiceDefinition::new("worker", "/sbin/worker")])
+            .unwrap();
+        let mut registry = ServiceRegistry::default();
+        registry.register(ServiceRecord::new("worker").unwrap()).unwrap();
+        (LifecycleCoordinator::new(plan), registry)
+    }
+
+    #[test]
+    fn dispatch_start_events_acknowledges_coordinator() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::StartSucceeded {
+                    service: "worker".into(),
+                    pid: 42,
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            )
+            .unwrap(),
+            RuntimeDispatchOutcome::StartAcknowledged
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Running);
+        assert_eq!(registry.get("worker").unwrap().pid, Some(42));
+    }
+
+    #[test]
+    fn dispatch_start_failure_preserves_runtime_diagnostic() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        let failure = RuntimeFailure::new(RuntimeFailureKind::TimedOut, "start timed out");
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::StartFailed {
+                    service: "worker".into(),
+                    failure: failure.clone(),
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            )
+            .unwrap(),
+            RuntimeDispatchOutcome::StartFailed { failure }
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Failed);
+    }
+
+    #[test]
+    fn dispatch_process_exit_uses_registry_restart_supervisor() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::ProcessExited {
+                    service: "worker".into(),
+                    status: ProcessExitStatus::Exited { code: 1 },
+                    observed_at_seconds: 10,
+                },
+                RestartPolicy::OnFailure,
+                RestartLimit::default(),
+            )
+            .unwrap(),
+            RuntimeDispatchOutcome::ProcessExit(ExitDecision::RestartScheduled {
+                delay_seconds: 2
+            })
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Starting);
+    }
+
+    #[test]
+    fn dispatch_stop_failure_records_failure_and_preserves_diagnostic() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        assert_eq!(coordinator.next_action(&mut registry).unwrap(), None);
+        coordinator.begin_shutdown(&mut registry).unwrap();
+        coordinator.next_action(&mut registry).unwrap();
+
+        let failure = RuntimeFailure::new(RuntimeFailureKind::TimedOut, "stop timed out");
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::StopFailed {
+                    service: "worker".into(),
+                    failure: failure.clone(),
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            )
+            .unwrap(),
+            RuntimeDispatchOutcome::StopFailed { failure }
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Failed);
+    }
+
+    #[test]
+    fn invalid_or_unexpected_runtime_events_do_not_mutate_state() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+
+        assert!(matches!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::StartSucceeded {
+                    service: "worker".into(),
+                    pid: 0,
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::InvalidEvent(
+                RuntimeEventError::InvalidPid(0)
+            ))
+        ));
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Starting);
+        assert!(matches!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::StopSucceeded {
+                    service: "worker".into(),
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::Coordinator(
+                LifecycleCoordinatorError::NoActionInFlight
+            ))
+        ));
+    }
+
 }
 
 /// A runtime-reported failure with a stable category and diagnostic detail.
