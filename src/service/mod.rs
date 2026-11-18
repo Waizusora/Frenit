@@ -2,6 +2,7 @@ pub mod adapter;
 pub mod coordinator;
 pub mod definition;
 pub mod dependency;
+pub mod executor;
 pub mod manager;
 pub mod plan;
 pub mod restart;
