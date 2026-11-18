@@ -506,7 +506,9 @@ mod tests {
             RestartLimit::default(),
         )
         .unwrap();
-        registry.transition("worker", ServiceState::Running, Some(43)).unwrap();
+        registry
+            .transition("worker", ServiceState::Running, Some(43))
+            .unwrap();
 
         assert_eq!(
             dispatch_runtime_event(
