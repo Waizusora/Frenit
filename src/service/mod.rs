@@ -6,5 +6,6 @@ pub mod executor;
 pub mod manager;
 pub mod plan;
 pub mod restart;
+pub mod restart_scheduler;
 pub mod runtime;
 pub mod supervisor;
