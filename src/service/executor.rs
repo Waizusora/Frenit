@@ -224,6 +224,59 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
         Ok(Some(outcome))
     }
 
+
+    /// Polls one event and derives restart policy from the validated service plan.
+    ///
+    /// This avoids applying one caller-supplied policy to every service.
+    pub fn poll_event_from_plan(
+        &mut self,
+        coordinator: &mut LifecycleCoordinator,
+        registry: &mut ServiceRegistry,
+        restart_limit: RestartLimit,
+    ) -> Result<Option<RuntimeDispatchOutcome>, RuntimeExecutorError> {
+        let Some(event) = self.adapter.poll_event().map_err(RuntimeExecutorError::AdapterPoll)? else {
+            return Ok(None);
+        };
+
+        let restart_policy = match &event {
+            super::runtime::RuntimeEvent::ProcessExited { service, .. } => coordinator
+                .start_action_for(service)
+                .ok_or_else(|| RuntimeExecutorError::MissingStartAction(service.clone()))?
+                .restart_policy,
+            _ => RestartPolicy::Never,
+        };
+        let restart_observation = match &event {
+            super::runtime::RuntimeEvent::ProcessExited { service, observed_at_seconds, .. } => {
+                Some((service.clone(), *observed_at_seconds))
+            }
+            _ => None,
+        };
+        let outcome = dispatch_runtime_event(
+            coordinator,
+            registry,
+            event,
+            restart_policy,
+            restart_limit,
+        )?;
+
+        if let (
+            Some((service, now_seconds)),
+            RuntimeDispatchOutcome::ProcessExit(
+                super::supervisor::ExitDecision::RestartScheduled { delay_seconds },
+            ),
+        ) = (restart_observation, &outcome)
+        {
+            let action = coordinator
+                .start_action_for(&service)
+                .ok_or_else(|| RuntimeExecutorError::MissingStartAction(service.clone()))?;
+            self.restart_scheduler
+                .schedule(action, now_seconds, *delay_seconds)
+                .map_err(RuntimeExecutorError::Scheduler)?;
+        }
+
+        Ok(Some(outcome))
+    }
+
     /// Begins shutdown and cancels restart requests that have not started yet.
     pub fn begin_shutdown(
         &mut self,
