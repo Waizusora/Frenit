@@ -514,6 +514,47 @@ mod tests {
     }
 
     #[test]
+    fn stale_stop_acknowledgement_cannot_complete_another_process_stop() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        coordinator.begin_shutdown(&mut registry).unwrap();
+        coordinator.next_action(&mut registry).unwrap();
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::StopSucceeded {
+                    service: "worker".into(),
+                    pid: 41,
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::InvalidEvent(
+                RuntimeEventError::StaleStopEvent {
+                    service: "worker".into(),
+                    expected_pid: Some(42),
+                    observed_pid: 41,
+                }
+            ))
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Stopping);
+        assert_eq!(registry.get("worker").unwrap().pid, Some(42));
+    }
+
+    #[test]
     fn stale_exit_from_previous_pid_cannot_stop_replacement_process() {
         let (mut coordinator, mut registry) = lifecycle_fixture();
         coordinator.next_action(&mut registry).unwrap();
