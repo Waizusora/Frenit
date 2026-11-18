@@ -184,7 +184,10 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(decision, ExitDecision::RestartScheduled { delay_seconds: 2 });
+        assert_eq!(
+            decision,
+            ExitDecision::RestartScheduled { delay_seconds: 2 }
+        );
         assert_eq!(service.state, ServiceState::Starting);
     }
 
