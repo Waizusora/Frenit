@@ -57,6 +57,18 @@ frenit command list
 
 The CLI validates command shape and reports unimplemented runtime operations explicitly; it never reports a privileged operation as successful.
 
+## Service lifecycle foundation
+
+The service lifecycle layer is split into validated definitions, dependency resolution, lifecycle planning, registry state, restart supervision, and ordered coordination.
+
+- `LifecyclePlan` builds deterministic startup actions and reverse-order shutdown actions.
+- `ServiceRegistry` tracks service state and maintains an independent restart supervisor for each registered service.
+- `LifecycleCoordinator` emits one action at a time, updates pending registry states, and requires the runtime to acknowledge each start/stop result before advancing.
+- A failed startup halts further startup actions; shutdown can then be initiated for services that reached the running state.
+- Shutdown suppresses restart scheduling.
+
+The coordinator is deliberately runtime-neutral. It does not spawn, signal, wait for, or reap processes. A future Wicofe runtime adapter must perform each emitted action and acknowledge its result using the documented Wicofe process and signal ABI.
+
 ## Build and test
 
 ```sh
