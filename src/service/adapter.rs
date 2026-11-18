@@ -19,6 +19,10 @@ use super::runtime::{RuntimeEvent, RuntimeFailure};
 ///   confirmed stopped and reaped according to the platform contract.
 /// - `ProcessExited` events must carry the PID of the process actually
 ///   observed exiting, so the dispatcher can reject stale notifications.
+/// - A `ProcessExited` event is emitted only after the exit status has been
+///   collected and the process has been reaped. If that process is currently
+///   in `Stopping`, the event completes the in-flight stop action; the adapter
+///   must not emit a second stop-completion event for the same process.
 /// - `poll_event` is non-blocking and returns at most one queued event.
 ///
 /// Timeout enforcement, process waiting/reaping, and event delivery are
