@@ -224,6 +224,24 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
         Ok(Some(outcome))
     }
 
+    /// Begins shutdown and cancels restart requests that have not started yet.
+    pub fn begin_shutdown(
+        &mut self,
+        coordinator: &mut LifecycleCoordinator,
+        registry: &mut ServiceRegistry,
+    ) -> Result<(), RuntimeExecutorError> {
+        coordinator.begin_shutdown(registry)?;
+        for scheduled in self.restart_scheduler.take_all() {
+            if registry
+                .get(&scheduled.action.service)
+                .is_some_and(|record| record.state == ServiceState::Starting)
+            {
+                registry.transition(&scheduled.action.service, ServiceState::Inactive, None)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Executes all restart deadlines that have expired at the supplied
     /// monotonic timestamp. No sleeping or clock access occurs here.
     pub fn execute_due_restarts(
