@@ -8,6 +8,8 @@ use super::restart::RestartPolicy;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartAction {
     pub service: String,
+    /// Identity of this particular process start; assigned by the coordinator.
+    pub generation: u64,
     pub executable: String,
     pub arguments: Vec<String>,
     pub environment: BTreeMap<String, String>,
@@ -20,6 +22,8 @@ pub struct StartAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StopAction {
     pub service: String,
+    /// Generation of the process targeted by this stop action.
+    pub generation: u64,
     pub timeout_ms: u64,
 }
 
@@ -99,6 +103,7 @@ impl LifecyclePlan {
                     .expect("resolved service must have a definition");
                 StartAction {
                     service: name,
+                    generation: 0,
                     executable: definition.executable.clone(),
                     arguments: definition.arguments.clone(),
                     environment: definition.environment.clone(),
@@ -117,6 +122,7 @@ impl LifecyclePlan {
                     .expect("planned service must have a definition");
                 StopAction {
                     service: action.service.clone(),
+                    generation: 0,
                     timeout_ms: definition.stop_timeout_ms,
                 }
             })

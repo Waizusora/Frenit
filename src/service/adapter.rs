@@ -13,6 +13,8 @@ use super::runtime::{RuntimeEvent, RuntimeFailure};
 /// - `start` returns a nonzero PID only after process creation succeeds.
 /// - `request_stop` only requests termination; it must not claim that the
 ///   process has exited.
+/// - Start and stop actions carry the service generation. Every event must
+///   echo that exact generation; the dispatcher rejects stale acknowledgements.
 /// - `StopSucceeded` and `StopFailed` events must include the PID targeted
 ///   by the stop request. The lifecycle dispatcher rejects stale acknowledgements.
 /// - A `StopSucceeded` event may be emitted only after the process is
@@ -94,6 +96,7 @@ mod tests {
         let mut runtime = FakeRuntime::default();
         let start = StartAction {
             service: "worker".into(),
+            generation: 0,
             executable: "/sbin/worker".into(),
             arguments: Vec::new(),
             environment: Default::default(),
@@ -103,6 +106,7 @@ mod tests {
         };
         let stop = StopAction {
             service: "worker".into(),
+            generation: 0,
             timeout_ms: 500,
         };
 
@@ -119,6 +123,7 @@ mod tests {
         let mut runtime = FakeRuntime::default();
         runtime.events.push_back(RuntimeEvent::ProcessExited {
             service: "worker".into(),
+            generation: 1,
             pid: 41,
             status: super::super::runtime::ProcessExitStatus::Exited { code: 0 },
             observed_at_seconds: 12,

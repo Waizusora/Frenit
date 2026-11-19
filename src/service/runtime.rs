@@ -75,24 +75,29 @@ impl ProcessExitStatus {
 pub enum RuntimeEvent {
     StartSucceeded {
         service: String,
+        generation: u64,
         pid: u32,
     },
     StartFailed {
         service: String,
+        generation: u64,
         failure: RuntimeFailure,
     },
     ProcessExited {
         service: String,
+        generation: u64,
         pid: u32,
         status: ProcessExitStatus,
         observed_at_seconds: u64,
     },
     StopSucceeded {
         service: String,
+        generation: u64,
         pid: u32,
     },
     StopFailed {
         service: String,
+        generation: u64,
         pid: u32,
         failure: RuntimeFailure,
     },
@@ -114,6 +119,11 @@ pub enum RuntimeEventError {
         expected_pid: Option<u32>,
         observed_pid: u32,
     },
+    StaleGeneration {
+        service: String,
+        expected_generation: Option<u64>,
+        observed_generation: u64,
+    },
 }
 
 impl std::fmt::Display for RuntimeEventError {
@@ -132,6 +142,10 @@ impl std::fmt::Display for RuntimeEventError {
             Self::StaleStopEvent { service, expected_pid, observed_pid } => write!(
                 formatter,
                 "stale stop event for service '{service}': expected PID {expected_pid:?}, observed PID {observed_pid}"
+            ),
+            Self::StaleGeneration { service, expected_generation, observed_generation } => write!(
+                formatter,
+                "stale generation for service '{service}': expected {expected_generation:?}, observed {observed_generation}"
             ),
         }
     }
@@ -216,6 +230,24 @@ impl From<SupervisorError> for RuntimeDispatchError {
     }
 }
 
+fn validate_generation(
+    registry: &ServiceRegistry,
+    service: &str,
+    generation: u64,
+) -> Result<(), RuntimeDispatchError> {
+    let expected_generation = registry.get(service).map(|record| record.generation);
+    if expected_generation != Some(generation) {
+        return Err(RuntimeDispatchError::InvalidEvent(
+            RuntimeEventError::StaleGeneration {
+                service: service.to_owned(),
+                expected_generation,
+                observed_generation: generation,
+            },
+        ));
+    }
+    Ok(())
+}
+
 /// Applies an adapter observation to the coordinator or service registry.
 /// No native process operation or waiting is performed.
 pub fn dispatch_runtime_event(
@@ -228,20 +260,24 @@ pub fn dispatch_runtime_event(
     event.validate()?;
 
     match event {
-        RuntimeEvent::StartSucceeded { service, pid } => {
+        RuntimeEvent::StartSucceeded { service, generation, pid } => {
+            validate_generation(registry, &service, generation)?;
             coordinator.complete_start(registry, &service, Some(pid))?;
             Ok(RuntimeDispatchOutcome::StartAcknowledged)
         }
-        RuntimeEvent::StartFailed { service, failure } => {
+        RuntimeEvent::StartFailed { service, generation, failure } => {
+            validate_generation(registry, &service, generation)?;
             coordinator.complete_start(registry, &service, None)?;
             Ok(RuntimeDispatchOutcome::StartFailed { failure })
         }
         RuntimeEvent::ProcessExited {
             service,
+            generation,
             pid,
             status,
             observed_at_seconds,
         } => {
+            validate_generation(registry, &service, generation)?;
             let expected_pid = registry.get(&service).and_then(|record| record.pid);
             if expected_pid != Some(pid) {
                 return Err(RuntimeDispatchError::InvalidEvent(
@@ -269,7 +305,8 @@ pub fn dispatch_runtime_event(
             )?;
             Ok(RuntimeDispatchOutcome::ProcessExit(decision))
         }
-        RuntimeEvent::StopSucceeded { service, pid } => {
+        RuntimeEvent::StopSucceeded { service, generation, pid } => {
+            validate_generation(registry, &service, generation)?;
             let expected_pid = registry.get(&service).and_then(|record| record.pid);
             if expected_pid != Some(pid) {
                 return Err(RuntimeDispatchError::InvalidEvent(
@@ -285,9 +322,11 @@ pub fn dispatch_runtime_event(
         }
         RuntimeEvent::StopFailed {
             service,
+            generation,
             pid,
             failure,
         } => {
+            validate_generation(registry, &service, generation)?;
             let expected_pid = registry.get(&service).and_then(|record| record.pid);
             if expected_pid != Some(pid) {
                 return Err(RuntimeDispatchError::InvalidEvent(
@@ -313,6 +352,7 @@ mod tests {
     fn successful_start_requires_a_valid_service_and_pid() {
         assert!(RuntimeEvent::StartSucceeded {
             service: "network".into(),
+            generation: 1,
             pid: 42,
         }
         .validate()
@@ -320,6 +360,7 @@ mod tests {
         assert_eq!(
             RuntimeEvent::StartSucceeded {
                 service: "network".into(),
+            generation: 1,
                 pid: 0,
             }
             .validate(),
@@ -331,12 +372,14 @@ mod tests {
     fn failure_events_require_diagnostic_messages() {
         let event = RuntimeEvent::StartFailed {
             service: "network".into(),
+            generation: 1,
             failure: RuntimeFailure::new(RuntimeFailureKind::TimedOut, "start deadline expired"),
         };
         assert!(event.validate().is_ok());
 
         let empty = RuntimeEvent::StopFailed {
             service: "network".into(),
+            generation: 1,
             pid: 1,
             failure: RuntimeFailure::new(RuntimeFailureKind::WaitFailed, "  "),
         };
@@ -359,6 +402,7 @@ mod tests {
         assert_eq!(
             RuntimeEvent::ProcessExited {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
                 status: ProcessExitStatus::Signaled { signal: 0 },
                 observed_at_seconds: 10,
@@ -382,6 +426,7 @@ mod tests {
     fn event_exposes_its_service_name() {
         let event = RuntimeEvent::StopSucceeded {
             service: "storage".into(),
+            generation: 1,
             pid: 7,
         };
         assert_eq!(event.service(), "storage");
@@ -412,6 +457,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::StartSucceeded {
                     service: "worker".into(),
+            generation: 1,
                     pid: 42,
                 },
                 RestartPolicy::Never,
@@ -436,6 +482,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::StartFailed {
                     service: "worker".into(),
+            generation: 1,
                     failure: failure.clone(),
                 },
                 RestartPolicy::Never,
@@ -456,6 +503,7 @@ mod tests {
             &mut registry,
             RuntimeEvent::StartSucceeded {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
             },
             RestartPolicy::Never,
@@ -469,6 +517,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::ProcessExited {
                     service: "worker".into(),
+            generation: 1,
                     pid: 42,
                     status: ProcessExitStatus::Exited { code: 1 },
                     observed_at_seconds: 10,
@@ -496,6 +545,7 @@ mod tests {
             &mut registry,
             RuntimeEvent::StartSucceeded {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
             },
             RestartPolicy::Never,
@@ -513,6 +563,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::StopFailed {
                     service: "worker".into(),
+            generation: 1,
                     pid: 42,
                     failure: failure.clone(),
                 },
@@ -534,6 +585,7 @@ mod tests {
             &mut registry,
             RuntimeEvent::StartSucceeded {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
             },
             RestartPolicy::Never,
@@ -549,6 +601,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::ProcessExited {
                     service: "worker".into(),
+            generation: 1,
                     pid: 42,
                     status: ProcessExitStatus::Signaled { signal: 15 },
                     observed_at_seconds: 20,
@@ -576,6 +629,7 @@ mod tests {
             &mut registry,
             RuntimeEvent::StartSucceeded {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
             },
             RestartPolicy::Never,
@@ -591,6 +645,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::StopSucceeded {
                     service: "worker".into(),
+            generation: 1,
                     pid: 41,
                 },
                 RestartPolicy::Never,
@@ -620,6 +675,7 @@ mod tests {
             &mut registry,
             RuntimeEvent::StartSucceeded {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
             },
             RestartPolicy::Never,
@@ -632,6 +688,7 @@ mod tests {
             &mut registry,
             RuntimeEvent::ProcessExited {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
                 status: ProcessExitStatus::Exited { code: 1 },
                 observed_at_seconds: 10,
@@ -650,6 +707,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::ProcessExited {
                     service: "worker".into(),
+            generation: 1,
                     pid: 42,
                     status: ProcessExitStatus::Exited { code: 0 },
                     observed_at_seconds: 11,
@@ -678,6 +736,7 @@ mod tests {
             &mut registry,
             RuntimeEvent::StartSucceeded {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
             },
             RestartPolicy::Never,
@@ -687,6 +746,7 @@ mod tests {
 
         let event = RuntimeEvent::ProcessExited {
             service: "worker".into(),
+            generation: 1,
             pid: 42,
             status: ProcessExitStatus::Exited { code: 0 },
             observed_at_seconds: 10,
@@ -734,6 +794,7 @@ mod tests {
             &mut registry,
             RuntimeEvent::StartSucceeded {
                 service: "worker".into(),
+            generation: 1,
                 pid: 42,
             },
             RestartPolicy::Never,
@@ -745,6 +806,7 @@ mod tests {
 
         let event = RuntimeEvent::StopSucceeded {
             service: "worker".into(),
+            generation: 1,
             pid: 42,
         };
         assert_eq!(
@@ -785,6 +847,67 @@ mod tests {
     }
 
     #[test]
+    fn reused_pid_from_previous_generation_is_rejected() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                generation: 1,
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::ProcessExited {
+                service: "worker".into(),
+                generation: 1,
+                pid: 42,
+                status: ProcessExitStatus::Exited { code: 1 },
+                observed_at_seconds: 10,
+            },
+            RestartPolicy::OnFailure,
+            RestartLimit::default(),
+        )
+        .unwrap();
+
+        // The supervisor has reserved generation 2 for the replacement process.
+        assert_eq!(registry.get("worker").unwrap().generation, 2);
+        registry.transition("worker", ServiceState::Running, Some(42)).unwrap();
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::ProcessExited {
+                    service: "worker".into(),
+                    generation: 1,
+                    pid: 42,
+                    status: ProcessExitStatus::Exited { code: 0 },
+                    observed_at_seconds: 11,
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::InvalidEvent(
+                RuntimeEventError::StaleGeneration {
+                    service: "worker".into(),
+                    expected_generation: Some(2),
+                    observed_generation: 1,
+                }
+            ))
+        );
+        assert_eq!(registry.get("worker").unwrap().pid, Some(42));
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Running);
+    }
+
+    #[test]
     fn invalid_runtime_events_do_not_mutate_state() {
         let (mut coordinator, mut registry) = lifecycle_fixture();
         coordinator.next_action(&mut registry).unwrap();
@@ -795,6 +918,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::StartSucceeded {
                     service: "worker".into(),
+            generation: 1,
                     pid: 0,
                 },
                 RestartPolicy::Never,

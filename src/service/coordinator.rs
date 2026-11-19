@@ -103,6 +103,11 @@ impl LifecycleCoordinator {
                     return Ok(None);
                 };
                 registry.transition(&action.service, ServiceState::Starting, None)?;
+                let mut action = action;
+                action.generation = registry
+                    .get(&action.service)
+                    .expect("transitioned service remains registered")
+                    .generation;
                 let action = LifecycleAction::Start(action);
                 self.in_flight = Some(action.clone());
                 Ok(Some(action))
@@ -119,7 +124,10 @@ impl LifecycleCoordinator {
                     let pid = record
                         .pid
                         .ok_or(ServiceRegistryError::PidRequired(ServiceState::Stopping))?;
+                    let generation = record.generation;
                     registry.transition(&action.service, ServiceState::Stopping, Some(pid))?;
+                    let mut action = action;
+                    action.generation = generation;
                     let action = LifecycleAction::Stop(action);
                     self.in_flight = Some(action.clone());
                     return Ok(Some(action));

@@ -213,9 +213,13 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
             ),
         ) = (restart_observation, &outcome)
         {
-            let action = coordinator
+            let mut action = coordinator
                 .start_action_for(&service)
                 .ok_or_else(|| RuntimeExecutorError::MissingStartAction(service.clone()))?;
+            action.generation = registry
+                .get(&service)
+                .ok_or_else(|| ServiceRegistryError::NotFound(service.clone()))?
+                .generation;
             self.restart_scheduler
                 .schedule(action, now_seconds, *delay_seconds)
                 .map_err(RuntimeExecutorError::Scheduler)?;
@@ -268,9 +272,13 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
             ),
         ) = (restart_observation, &outcome)
         {
-            let action = coordinator
+            let mut action = coordinator
                 .start_action_for(&service)
                 .ok_or_else(|| RuntimeExecutorError::MissingStartAction(service.clone()))?;
+            action.generation = registry
+                .get(&service)
+                .ok_or_else(|| ServiceRegistryError::NotFound(service.clone()))?
+                .generation;
             self.restart_scheduler
                 .schedule(action, now_seconds, *delay_seconds)
                 .map_err(RuntimeExecutorError::Scheduler)?;
@@ -309,6 +317,14 @@ impl<A: RuntimeAdapter> RuntimeExecutor<A> {
 
         for scheduled in due {
             let service = scheduled.action.service.clone();
+            let Some(record) = registry.get(&service) else {
+                continue;
+            };
+            if record.state != ServiceState::Starting
+                || record.generation != scheduled.action.generation
+            {
+                continue;
+            }
             match self.adapter.start(&scheduled.action) {
                 Ok(pid) if pid > 0 => {
                     registry.transition(&service, ServiceState::Running, Some(pid))?;
@@ -398,6 +414,7 @@ mod tests {
             .events
             .push_back(RuntimeEvent::ProcessExited {
                 service: "worker".into(),
+            generation: 1,
                 pid: 41,
                 status: ProcessExitStatus::Exited { code: 1 },
                 observed_at_seconds: 10,
@@ -457,7 +474,8 @@ mod tests {
             events: VecDeque::new(),
             next_pid: 0,
         });
-        let action = coordinator.start_action_for("worker").unwrap();
+        let mut action = coordinator.start_action_for("worker").unwrap();
+        action.generation = registry.get("worker").unwrap().generation;
         executor.restart_scheduler.schedule(action, 10, 30).unwrap();
 
         executor
@@ -520,7 +538,8 @@ mod tests {
             )
             .unwrap();
         let mut executor = RuntimeExecutor::new(FailingAdapter);
-        let action = coordinator.start_action_for("worker").unwrap();
+        let mut action = coordinator.start_action_for("worker").unwrap();
+        action.generation = registry.get("worker").unwrap().generation;
         executor.restart_scheduler.schedule(action, 1, 0).unwrap();
 
         assert!(matches!(

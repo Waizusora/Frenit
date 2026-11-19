@@ -107,6 +107,7 @@ mod tests {
     fn action(service: &str) -> StartAction {
         StartAction {
             service: service.into(),
+            generation: 0,
             executable: format!("/sbin/{service}"),
             arguments: Vec::new(),
             environment: Default::default(),
