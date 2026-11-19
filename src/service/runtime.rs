@@ -774,7 +774,10 @@ mod tests {
                 }
             ))
         );
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Inactive);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Inactive
+        );
         assert_eq!(
             coordinator.phase(),
             super::super::coordinator::LifecyclePhase::Shutdown
