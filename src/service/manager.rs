@@ -44,6 +44,8 @@ pub struct ServiceRecord {
     pub name: String,
     pub state: ServiceState,
     pub pid: Option<u32>,
+    /// Monotonically increasing service start generation; retained after exit.
+    pub generation: u64,
 }
 
 impl ServiceRecord {
@@ -55,6 +57,7 @@ impl ServiceRecord {
             name,
             state: ServiceState::Inactive,
             pid: None,
+            generation: 0,
         })
     }
 
@@ -87,8 +90,21 @@ impl ServiceRecord {
             }
         }
 
+        let next_generation = if next == ServiceState::Starting {
+            Some(
+                self.generation
+                    .checked_add(1)
+                    .ok_or(ServiceRegistryError::GenerationExhausted)?,
+            )
+        } else {
+            None
+        };
+
         self.state = next;
         self.pid = pid;
+        if let Some(generation) = next_generation {
+            self.generation = generation;
+        }
         Ok(())
     }
 }
@@ -105,6 +121,7 @@ pub enum ServiceRegistryError {
     PidRequired(ServiceState),
     PidNotAllowed(ServiceState),
     InvalidPid(u32),
+    GenerationExhausted,
 }
 
 impl fmt::Display for ServiceRegistryError {
@@ -121,6 +138,7 @@ impl fmt::Display for ServiceRegistryError {
             }
             Self::PidNotAllowed(state) => write!(formatter, "a PID is not allowed for {state:?}"),
             Self::InvalidPid(pid) => write!(formatter, "invalid process ID {pid}"),
+            Self::GenerationExhausted => write!(formatter, "service start generation exhausted"),
         }
     }
 }
@@ -291,6 +309,31 @@ mod tests {
         record.transition(ServiceState::Stopping, Some(42)).unwrap();
         record.transition(ServiceState::Inactive, None).unwrap();
         assert_eq!(record.pid, None);
+    }
+
+    #[test]
+    fn service_generation_increments_for_each_start_and_survives_exit() {
+        let mut record = ServiceRecord::new("worker").unwrap();
+        assert_eq!(record.generation, 0);
+
+        record.transition(ServiceState::Starting, None).unwrap();
+        assert_eq!(record.generation, 1);
+        record.transition(ServiceState::Running, Some(41)).unwrap();
+        record.transition(ServiceState::Inactive, None).unwrap();
+        assert_eq!(record.generation, 1);
+
+        record.transition(ServiceState::Starting, None).unwrap();
+        assert_eq!(record.generation, 2);
+        record.transition(ServiceState::Running, Some(41)).unwrap();
+        assert_eq!(record.generation, 2);
+    }
+
+    #[test]
+    fn failed_transition_does_not_advance_service_generation() {
+        let mut record = ServiceRecord::new("worker").unwrap();
+        assert!(record.transition(ServiceState::Running, Some(41)).is_err());
+        assert_eq!(record.generation, 0);
+        assert_eq!(record.state, ServiceState::Inactive);
     }
 
     #[test]
