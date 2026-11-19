@@ -134,12 +134,14 @@ mod tests {
         };
         adapter.events.push_back(RuntimeEvent::ProcessExited {
             service: "worker".into(),
+            generation: 1,
             pid: 1,
             status: ProcessExitStatus::Exited { code: 1 },
             observed_at_seconds: 100,
         });
         adapter.events.push_back(RuntimeEvent::ProcessExited {
             service: "worker".into(),
+            generation: 1,
             pid: 1,
             status: ProcessExitStatus::Exited { code: 1 },
             observed_at_seconds: 101,
@@ -216,6 +218,7 @@ mod tests {
             .events
             .push_back(RuntimeEvent::StopSucceeded {
                 service: "beta".into(),
+                generation: 1,
                 pid: 102,
             });
 
