@@ -719,7 +719,7 @@ mod tests {
                 &mut registry,
                 RuntimeEvent::ProcessExited {
                     service: "worker".into(),
-                    generation: 1,
+                    generation: 2,
                     pid: 42,
                     status: ProcessExitStatus::Exited { code: 0 },
                     observed_at_seconds: 11,
