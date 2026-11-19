@@ -414,7 +414,7 @@ mod tests {
             .events
             .push_back(RuntimeEvent::ProcessExited {
                 service: "worker".into(),
-            generation: 1,
+                generation: 1,
                 pid: 41,
                 status: ProcessExitStatus::Exited { code: 1 },
                 observed_at_seconds: 10,
