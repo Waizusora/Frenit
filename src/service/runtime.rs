@@ -922,6 +922,98 @@ mod tests {
     }
 
     #[test]
+    fn delayed_start_acknowledgement_from_previous_generation_is_rejected() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+
+        // Simulate cancellation of generation 1 and a later generation 2 start.
+        registry
+            .transition("worker", ServiceState::Failed, None)
+            .unwrap();
+        registry
+            .transition("worker", ServiceState::Inactive, None)
+            .unwrap();
+        registry
+            .transition("worker", ServiceState::Starting, None)
+            .unwrap();
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::StartSucceeded {
+                    service: "worker".into(),
+                    generation: 1,
+                    pid: 42,
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::InvalidEvent(
+                RuntimeEventError::StaleGeneration {
+                    service: "worker".into(),
+                    expected_generation: Some(2),
+                    observed_generation: 1,
+                }
+            ))
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Starting);
+        assert_eq!(registry.get("worker").unwrap().pid, None);
+    }
+
+    #[test]
+    fn delayed_stop_acknowledgement_from_previous_generation_is_rejected_on_pid_reuse() {
+        let (mut coordinator, mut registry) = lifecycle_fixture();
+        coordinator.next_action(&mut registry).unwrap();
+        dispatch_runtime_event(
+            &mut coordinator,
+            &mut registry,
+            RuntimeEvent::StartSucceeded {
+                service: "worker".into(),
+                generation: 1,
+                pid: 42,
+            },
+            RestartPolicy::Never,
+            RestartLimit::default(),
+        )
+        .unwrap();
+        coordinator.begin_shutdown(&mut registry).unwrap();
+        coordinator.next_action(&mut registry).unwrap();
+
+        // The original process is gone; a new start reuses the same PID.
+        coordinator.complete_stop(&mut registry, "worker", true).unwrap();
+        registry
+            .transition("worker", ServiceState::Starting, None)
+            .unwrap();
+        registry
+            .transition("worker", ServiceState::Running, Some(42))
+            .unwrap();
+
+        assert_eq!(
+            dispatch_runtime_event(
+                &mut coordinator,
+                &mut registry,
+                RuntimeEvent::StopSucceeded {
+                    service: "worker".into(),
+                    generation: 1,
+                    pid: 42,
+                },
+                RestartPolicy::Never,
+                RestartLimit::default(),
+            ),
+            Err(RuntimeDispatchError::InvalidEvent(
+                RuntimeEventError::StaleGeneration {
+                    service: "worker".into(),
+                    expected_generation: Some(2),
+                    observed_generation: 1,
+                }
+            ))
+        );
+        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Running);
+        assert_eq!(registry.get("worker").unwrap().pid, Some(42));
+    }
+
+    #[test]
     fn invalid_runtime_events_do_not_mutate_state() {
         let (mut coordinator, mut registry) = lifecycle_fixture();
         coordinator.next_action(&mut registry).unwrap();
