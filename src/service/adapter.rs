@@ -71,18 +71,20 @@ mod tests {
     #[derive(Default)]
     struct FakeRuntime {
         events: VecDeque<RuntimeEvent>,
-        started: Vec<String>,
-        stop_requests: Vec<(String, u32)>,
+        started: Vec<(String, u64)>,
+        stop_requests: Vec<(String, u64, u32)>,
     }
 
     impl RuntimeAdapter for FakeRuntime {
         fn start(&mut self, action: &StartAction) -> Result<u32, RuntimeFailure> {
-            self.started.push(action.service.clone());
+            self.started
+                .push((action.service.clone(), action.generation));
             Ok(41)
         }
 
         fn request_stop(&mut self, action: &StopAction, pid: u32) -> Result<(), RuntimeFailure> {
-            self.stop_requests.push((action.service.clone(), pid));
+            self.stop_requests
+                .push((action.service.clone(), action.generation, pid));
             Ok(())
         }
 
@@ -96,7 +98,7 @@ mod tests {
         let mut runtime = FakeRuntime::default();
         let start = StartAction {
             service: "worker".into(),
-            generation: 0,
+            generation: 7,
             executable: "/sbin/worker".into(),
             arguments: Vec::new(),
             environment: Default::default(),
@@ -106,14 +108,14 @@ mod tests {
         };
         let stop = StopAction {
             service: "worker".into(),
-            generation: 0,
+            generation: 7,
             timeout_ms: 500,
         };
 
         assert_eq!(runtime.start(&start).unwrap(), 41);
         runtime.request_stop(&stop, 41).unwrap();
-        assert_eq!(runtime.started, vec!["worker"]);
-        assert_eq!(runtime.stop_requests, vec![("worker".into(), 41)]);
+        assert_eq!(runtime.started, vec![("worker".into(), 7)]);
+        assert_eq!(runtime.stop_requests, vec![("worker".into(), 7, 41)]);
         assert_eq!(start.timeout_ms, 1_000);
         assert_eq!(stop.timeout_ms, 500);
     }
