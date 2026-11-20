@@ -957,7 +957,10 @@ mod tests {
                 }
             ))
         );
-        assert_eq!(registry.get("worker").unwrap().state, ServiceState::Starting);
+        assert_eq!(
+            registry.get("worker").unwrap().state,
+            ServiceState::Starting
+        );
         assert_eq!(registry.get("worker").unwrap().pid, None);
     }
 
@@ -981,7 +984,9 @@ mod tests {
         coordinator.next_action(&mut registry).unwrap();
 
         // The original process is gone; a new start reuses the same PID.
-        coordinator.complete_stop(&mut registry, "worker", true).unwrap();
+        coordinator
+            .complete_stop(&mut registry, "worker", true)
+            .unwrap();
         registry
             .transition("worker", ServiceState::Starting, None)
             .unwrap();
