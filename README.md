@@ -95,7 +95,7 @@ Before enabling a real PID 1 runtime, define and test process creation/exec/wait
 
 ## Wicofe integration
 
-Frenit is the canonical init-system project for Wicofe. Its cross-component integration boundary is documented in [WIC-SPEC-BOOT-FRENIT-001](https://github.com/Waizusora/Wicofe-Specs/blob/main/boot/FRENIT_INTEGRATION_CONTRACT_0.1.md). Kernel process and boot mechanisms are owned by [Wicofe-Kernel](https://github.com/Waizusora/Wicofe-Kernel), while public syscall definitions are owned by [Wicofe-ABI](https://github.com/Waizusora/Wicofe-ABI).
+Frenit is the canonical init-system project for Wicofe. Its cross-component integration boundary is documented in [WIC-SPEC-BOOT-FRENIT-001](https://github.com/Waizusora/Wicofe-Spec/blob/main/boot/FRENIT_INTEGRATION_CONTRACT_0.1.md). Kernel process and boot mechanisms are owned by [Wicofe-Kernel](https://github.com/Waizusora/Wicofe-Kernel), while public syscall definitions are owned by [Wicofe-ABI](https://github.com/Waizusora/Wicofe-ABI).
 
 Native PID 1 integration remains blocked on the kernel/ABI handoff, process lifecycle, signals, VFS, IPC and shutdown contracts. Do not install Frenit as PID 1 until the native QEMU conformance gates pass.
 
@@ -105,4 +105,4 @@ MIT
 
 ## Wicofe-wide principles
 
-Wicofe is an independent Unix-like, POSIX-compatible operating system and software ecosystem, designed as an alternative to established and widely adopted software ecosystems and technologies, including GNU. Native components must use Wicofe interfaces and must not require Linux libc or GNU compatibility layers. Prefer permissive licenses; avoid GPL/AGPL, and consider LGPL only when no suitable permissive alternative exists. Reuse or fork upstream software when implementing it from scratch would be disproportionately difficult. See the [canonical project principles](https://github.com/Waizusora/Wicofe-Docs/blob/main/PROJECT_PRINCIPLES.md).
+Wicofe is an independent Unix-like, POSIX-compatible operating system and software ecosystem, designed as an alternative to established and widely adopted software ecosystems and technologies, including GNU. Native components must use Wicofe interfaces and must not require Linux libc or GNU compatibility layers. Prefer permissive licenses; avoid GPL/AGPL, and consider LGPL only when no suitable permissive alternative exists. Reuse or fork upstream software when implementing it from scratch would be disproportionately difficult. See the [canonical project principles](https://github.com/Waizusora/Wicofe-Doc/blob/main/PROJECT_PRINCIPLES.md).
